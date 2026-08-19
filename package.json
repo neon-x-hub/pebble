@@ -1,0 +1,17 @@
+{
+  "name": "pebble",
+  "private": true,
+  "scripts": {
+    "build": "tsc --build",
+    "test": "pnpm -r run test",
+    "test:coverage": "pnpm -r run test:coverage",
+    "lint": "pnpm -r run lint",
+    "clean": "tsc --build --clean && pnpm -r run clean",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "pnpm run build && changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^3.0.1"
+  }
+}

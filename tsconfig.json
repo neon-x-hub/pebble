@@ -1,0 +1,12 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/types" },
+    { "path": "packages/crypto" },
+    { "path": "packages/wire" },
+    { "path": "packages/core" },
+    { "path": "packages/node" },
+    { "path": "packages/client" },
+    { "path": "packages/moderator" }
+  ]
+}
