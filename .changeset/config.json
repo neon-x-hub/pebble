@@ -1,0 +1,23 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@3.0.0/schema.json",
+  "changelog": "@changesets/cli/changelog",
+  "commit": false,
+  "fixed": [
+    [
+      "@pebbl/types",
+      "@pebbl/crypto",
+      "@pebbl/wire",
+      "@pebbl/core",
+      "@pebbl/node",
+      "@pebbl/client",
+      "@pebbl/moderator"
+    ]
+  ],
+  "linked": [],
+  "access": "public",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": [
+    "@pebbl/integration-tests"
+  ]
+}
