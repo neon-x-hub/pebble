@@ -1,0 +1,25 @@
+{
+  "name": "@pebbl/integration-tests",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@pebbl/types": "workspace:*",
+    "@pebbl/crypto": "workspace:*",
+    "@pebbl/wire": "workspace:*",
+    "@pebbl/core": "workspace:*",
+    "@pebbl/node": "workspace:*",
+    "@pebbl/client": "workspace:*",
+    "@pebbl/moderator": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^2.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^2.0.0"
+  }
+}
