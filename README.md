@@ -1,7 +1,7 @@
 # Pebble
 
 <div align="center">
-    <img src="https://raw.githubusercontent.com/neon-x-hub/pebble/main/docs/pebble.png" width="600" />
+    <img src="https://raw.githubusercontent.com/neon-x-hub/pebble/main/docs/assets/pebble.webp" width="600" />
 </div>
 
 [![npm version](https://badge.fury.io/js/%40pebbl%2Fclient.svg)](https://badge.fury.io/js/%40pebbl%2Fclient)
