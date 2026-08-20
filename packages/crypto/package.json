@@ -1,6 +1,6 @@
 {
   "name": "@pebbl/crypto",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Ed25519 cryptography, canonical JSON encoding, and signature verification for Pebble",
   "publishConfig": {
     "access": "public"
