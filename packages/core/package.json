@@ -1,6 +1,6 @@
 {
   "name": "@pebbl/core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "In-memory store, Last-Write-Wins conflict resolution, append-only log persistence, and recovery for Pebble",
   "publishConfig": {
     "access": "public"

@@ -1,6 +1,6 @@
 {
   "name": "@pebbl/client",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Client SDK for connecting to Pebble clusters with authenticated permissions and multiplexed TCP requests",
   "publishConfig": {
     "access": "public"

@@ -1,6 +1,6 @@
 {
   "name": "@pebbl/types",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Shared domain types, wire protocol message constants, and error classes for Pebble distributed key-value store",
   "publishConfig": {
     "access": "public"
