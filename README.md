@@ -1,5 +1,15 @@
 # Pebble
 
+<div align="center">
+    <img src="https://raw.githubusercontent.com/neon-x-hub/pebble/main/docs/pebble.png" width="600" />
+</div>
+
+[![npm version](https://badge.fury.io/js/%40pebbl%2Fclient.svg)](https://badge.fury.io/js/%40pebbl%2Fclient)
+![GitHub](https://img.shields.io/github/stars/neon-x-hub/pebble?style=social)
+![GitHub Repo stars](https://img.shields.io/github/stars/neon-x-hub/pebble?style=social)
+[![Build Status](https://github.com/neon-x-hub/pebble/actions/workflows/ci.yml/badge.svg)](https://github.com/neon-x-hub/pebble/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/neon-x-hub/pebble/branch/main/graph/badge.svg)](https://codecov.io/gh/neon-x-hub/pebble)
+
 Pebble is an eventually consistent, distributed peer-to-peer key-value store built in TypeScript on Node.js. It replicates data across cluster nodes using a pull-based gossip protocol, resolves concurrent modifications deterministically using Last-Write-Wins (LWW), and authenticates both peer nodes and external clients using Ed25519 digital signatures.
 
 There is no leader election, consensus algorithm (no Raft, no Paxos), or central coordinator. Any cluster node can accept reads and writes, and healthy nodes eventually converge to identical state.
