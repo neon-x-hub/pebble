@@ -1,9 +1,24 @@
 {
   "name": "@pebbl/crypto",
   "version": "0.1.0",
+  "description": "Ed25519 cryptography, canonical JSON encoding, and signature verification for Pebble",
   "publishConfig": {
     "access": "public"
   },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/neon-x-hub/pebble.git",
+    "directory": "packages/crypto"
+  },
+  "keywords": [
+    "pebble",
+    "crypto",
+    "ed25519",
+    "signatures",
+    "canonical-json",
+    "security"
+  ],
   "type": "module",
   "exports": {
     ".": {
@@ -13,7 +28,9 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",

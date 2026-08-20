@@ -1,9 +1,25 @@
 {
   "name": "@pebbl/core",
   "version": "0.1.0",
+  "description": "In-memory store, Last-Write-Wins conflict resolution, append-only log persistence, and recovery for Pebble",
   "publishConfig": {
     "access": "public"
   },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/neon-x-hub/pebble.git",
+    "directory": "packages/core"
+  },
+  "keywords": [
+    "pebble",
+    "store",
+    "lww",
+    "conflict-resolution",
+    "persistence",
+    "event-sourcing",
+    "log"
+  ],
   "type": "module",
   "exports": {
     ".": {
@@ -13,7 +29,9 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
@@ -21,8 +39,8 @@
     "clean": "node --eval \"require('fs').rmSync('dist', { recursive: true, force: true })\""
   },
   "dependencies": {
-    "@pebbl/types": "workspace:*",
-    "@pebbl/crypto": "workspace:*"
+    "@pebbl/crypto": "workspace:*",
+    "@pebbl/types": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

@@ -1,9 +1,24 @@
 {
   "name": "@pebbl/wire",
   "version": "0.1.0",
+  "description": "Binary length-type-payload framing and streaming frame decoder for Pebble",
   "publishConfig": {
     "access": "public"
   },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/neon-x-hub/pebble.git",
+    "directory": "packages/wire"
+  },
+  "keywords": [
+    "pebble",
+    "wire-protocol",
+    "tcp",
+    "framing",
+    "streaming",
+    "decoder"
+  ],
   "type": "module",
   "exports": {
     ".": {
@@ -13,7 +28,9 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
