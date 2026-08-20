@@ -1,6 +1,6 @@
 {
   "name": "@pebbl/node",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Full cluster peer node runtime, gossip replication engine, and client server for Pebble",
   "publishConfig": {
     "access": "public"
