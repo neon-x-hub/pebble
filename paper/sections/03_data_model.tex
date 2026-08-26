@@ -1,0 +1,119 @@
+% =============================================================================
+% Section 3 — Data Model & Mutation Algebra
+% =============================================================================
+\section{Data Model and Mutation Algebra}
+\label{sec:datamodel}
+
+\subsection{The Mutation}
+
+The fundamental unit of state change in \pebble{} is the \emph{mutation}---an
+immutable, signed record of a single key-value operation.
+
+\begin{definition}[Mutation]
+\label{def:mutation}
+A \emph{mutation} is a 7-tuple
+\[
+  m = \langle \mnid,\; \mseq,\; \mts,\; \mop,\; \mkey,\; \mval,\; \msig \rangle
+\]
+where:
+\begin{itemize}[leftmargin=1.5em]
+  \item $\mnid \in \NodeSet$ is the identifier of the node that created $m$.
+  \item $\mseq \in \mathbb{Z}^{+}$ is a monotonically increasing counter local
+        to $\mnid$: no two mutations from the same node share the same sequence
+        number, and sequence numbers only increase across node restarts.
+  \item $\mts \in \mathbb{Z}^{+}$ is the wall-clock timestamp (milliseconds
+        since the Unix epoch) at the time of creation.
+  \item $\mop \in \{\texttt{put},\; \texttt{delete}\}$ is the operation type.
+  \item $\mkey \in \KeySet$ is the key being modified.
+  \item $\mval \in \Sigma^* \cup \{\bot\}$ is the value: a non-empty UTF-8
+        string for \texttt{put}, and $\bot$ (null) for \texttt{delete}.
+  \item $\msig \in \{0,1\}^{512}$ is the Ed25519 signature of the node over
+        all other fields (see \cref{sec:crypto}).
+\end{itemize}
+\end{definition}
+
+\begin{definition}[Mutation ID]
+\label{def:mutid}
+The \emph{mutation ID} of $m$ is the pair $(\mnid, \mseq)$, written
+$\mathrm{id}(m) = \mnid\texttt{:}\mseq$.
+Mutation IDs are globally unique across the cluster:
+\[
+  \forall m, m' \in \MutSet:\quad
+  \mathrm{id}(m) = \mathrm{id}(m') \implies m = m'.
+\]
+This is enforced by the sequence collision check in the Store
+(see \cref{sec:invariants}, Invariant~\ref{inv:uniqueness}).
+\end{definition}
+
+\subsection{Operations and Tombstones}
+
+\pebble{} supports exactly two operations:
+
+\begin{description}[leftmargin=1.5em]
+  \item[\texttt{put}$(k, v)$] Associates key $k$ with value $v \in \Sigma^*$.
+  \item[\texttt{delete}$(k)$] Creates a \emph{tombstone} mutation for key $k$
+        with $\mval = \bot$. The tombstone propagates through gossip like any
+        other mutation, preventing deleted data from reappearing on nodes that
+        have not yet received the deletion.
+\end{description}
+
+\begin{definition}[Live key]
+A key $k$ is \emph{live} at node $n$ at time $t$ if the winning mutation for $k$
+in $n$'s store has operation \texttt{put}. A key is \emph{deleted} if the winner
+is a tombstone. A key is \emph{absent} if no mutation for $k$ has been received.
+\end{definition}
+
+\begin{remark}[Tombstone replication]
+Tombstones must replicate through gossip exactly like writes. Without tombstone
+replication, a node that has received a \texttt{put} but not yet received the
+subsequent \texttt{delete} will continue to serve the stale value indefinitely.
+\pebble{} stores tombstones in the mutation history and transfers them during
+gossip sync. Tombstone GC is a v0.2 concern (\cref{sec:limitations}).
+\end{remark}
+
+\subsection{The Mutation History}
+
+Every \pebble{} node maintains an in-memory \emph{mutation history}---a mapping
+from mutation IDs to the corresponding full mutation objects:
+
+\[
+  H : (\NodeSet \times \mathbb{Z}^{+}) \to \MutSet
+\]
+
+The history grows monotonically: once a mutation is added it is never removed
+(v0.1). The history enables exact range-based gossip: given a peer's version
+vector, the local node can enumerate precisely which mutations the peer is missing.
+
+\subsection{Current State}
+
+The \emph{current state} is the projection of the history onto the winning
+mutation per key:
+
+\[
+  S : \KeySet \to \MutSet,\quad S(k) = \win\bigl(\{m \in H : m.\mkey = k\}\bigr)
+\]
+
+where $\win$ is defined by the LWW total order of \cref{sec:conflict}.
+The current state is maintained incrementally: when a new mutation $m$ for key
+$k$ arrives, $S(k)$ is updated only if $m$ wins over the existing $S(k)$.
+
+\subsection{Mutation Wire Format}
+
+Mutations are serialised as JSON objects when transmitted over the gossip
+protocol or stored in the mutation log. The canonical on-wire representation is:
+
+\begin{lstlisting}[language=json, caption={Mutation JSON representation.}]
+{
+  "nodeId":    "node-a",
+  "sequence":  42,
+  "timestamp": 1787060000000,
+  "operation": "put",
+  "key":       "app:theme",
+  "value":     "dark",
+  "signature": "3045022100..."
+}
+\end{lstlisting}
+
+\noindent For \texttt{delete} mutations, \texttt{"value"} is \texttt{null}.
+The \texttt{signature} field covers all other fields via the canonical JSON
+encoding described in \cref{sec:crypto}.

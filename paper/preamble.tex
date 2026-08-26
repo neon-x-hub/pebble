@@ -1,0 +1,215 @@
+% =============================================================================
+% preamble.tex — Pebble Whitepaper
+% =============================================================================
+
+% ---------------------------------------------------------------------------
+% Core packages
+% ---------------------------------------------------------------------------
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{geometry}
+\geometry{a4paper, margin=1in}
+
+% ---------------------------------------------------------------------------
+% Math
+% ---------------------------------------------------------------------------
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{mathtools}
+
+% ---------------------------------------------------------------------------
+% Graphics and diagrams
+% ---------------------------------------------------------------------------
+\usepackage{tikz}
+\usepackage{tikz-cd}
+\usetikzlibrary{
+  arrows.meta,
+  shapes.geometric,
+  positioning,
+  fit,
+  backgrounds,
+  calc,
+  decorations.pathreplacing,
+  matrix
+}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{graphicx}
+\usepackage{float}
+
+% ---------------------------------------------------------------------------
+% Tables and listings
+% ---------------------------------------------------------------------------
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{listings}
+\usepackage{xcolor}
+
+% ---------------------------------------------------------------------------
+% References and links
+% ---------------------------------------------------------------------------
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!70!black,
+  citecolor=green!50!black,
+  urlcolor=blue!70!black,
+  pdfauthor={Abderrahmane Memmou},
+  pdftitle={Pebble: A Leaderless, Eventually Consistent Distributed Key-Value Store},
+  pdfsubject={Distributed Systems},
+}
+\usepackage[nameinlink]{cleveref}
+
+% ---------------------------------------------------------------------------
+% Algorithms
+% ---------------------------------------------------------------------------
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
+% ---------------------------------------------------------------------------
+% Typography
+% ---------------------------------------------------------------------------
+\usepackage{parskip}
+\setlength{\parskip}{6pt}
+\usepackage{enumitem}
+\usepackage{caption}
+\usepackage{subcaption}
+
+% ---------------------------------------------------------------------------
+% Code listings style
+% ---------------------------------------------------------------------------
+\definecolor{codebg}{RGB}{248,248,248}
+\definecolor{codeframe}{RGB}{200,200,200}
+\definecolor{codecomment}{RGB}{100,100,100}
+\definecolor{codekeyword}{RGB}{0,0,180}
+\definecolor{codestring}{RGB}{163,21,21}
+\definecolor{codenumber}{RGB}{100,100,100}
+
+\lstdefinestyle{pebblestyle}{
+  backgroundcolor=\color{codebg},
+  frame=single,
+  rulecolor=\color{codeframe},
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{codekeyword}\bfseries,
+  stringstyle=\color{codestring},
+  commentstyle=\color{codecomment}\itshape,
+  numberstyle=\tiny\color{codenumber},
+  numbers=left,
+  numbersep=8pt,
+  breaklines=true,
+  captionpos=b,
+  tabsize=2,
+  showstringspaces=false,
+}
+\lstset{style=pebblestyle}
+
+\lstdefinelanguage{json}{
+  morestring=[b]",
+  morecomment=[l]{//},
+  morecomment=[s]{/*}{*/},
+  literate=
+    *{0}{{{\color{codenumber}0}}}{1}
+     {1}{{{\color{codenumber}1}}}{1}
+     {2}{{{\color{codenumber}2}}}{1}
+     {3}{{{\color{codenumber}3}}}{1}
+     {4}{{{\color{codenumber}4}}}{1}
+     {5}{{{\color{codenumber}5}}}{1}
+     {6}{{{\color{codenumber}6}}}{1}
+     {7}{{{\color{codenumber}7}}}{1}
+     {8}{{{\color{codenumber}8}}}{1}
+     {9}{{{\color{codenumber}9}}}{1}
+     {:}{{{\color{codekeyword}{:}}}}{1}
+     {,}{{{\color{codekeyword}{,}}}}{1}
+     {\{}{{{\color{codekeyword}{\{}}}}{1}
+     {\}}{{{\color{codekeyword}{\}}}}}{1}
+     {[}{{{\color{codekeyword}{[}}}}{1}
+     {]}{{{\color{codekeyword}{]}}}}{1},
+}
+
+% ---------------------------------------------------------------------------
+% Theorem environments
+% ---------------------------------------------------------------------------
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{proposition}[theorem]{Proposition}
+
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+\newtheorem{invariant}[theorem]{Invariant}
+\newtheorem{protocol}[theorem]{Protocol}
+
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+\newtheorem{note}[theorem]{Note}
+
+% ---------------------------------------------------------------------------
+% Custom macros
+% ---------------------------------------------------------------------------
+% Mutation fields
+\newcommand{\mutid}{\mathrm{id}}
+\newcommand{\mnid}{\mathit{nodeId}}
+\newcommand{\mseq}{\mathit{seq}}
+\newcommand{\mts}{\mathit{ts}}
+\newcommand{\mop}{\mathit{op}}
+\newcommand{\mkey}{\mathit{key}}
+\newcommand{\mval}{\mathit{val}}
+\newcommand{\msig}{\sigma}
+
+% Sets and domains
+\newcommand{\NodeSet}{\mathcal{N}}
+\newcommand{\MutSet}{\mathcal{M}}
+\newcommand{\KeySet}{\mathcal{K}}
+\newcommand{\VV}{\mathbf{V}}
+
+% LWW order
+\newcommand{\lwwlt}{\prec_{\mathrm{lww}}}
+\newcommand{\lwwleq}{\preceq_{\mathrm{lww}}}
+\newcommand{\win}{\mathrm{winner}}
+
+% Complexity
+\newcommand{\Oof}[1]{O\!\left(#1\right)}
+
+% Protocol names
+\newcommand{\pebble}{\textsc{Pebble}}
+\newcommand{\pkg}[1]{\texttt{@pebbl/#1}}
+
+% Inline code
+\newcommand{\code}[1]{\texttt{#1}}
+
+% Message types
+\newcommand{\msg}[1]{\textsf{\small #1}}
+
+% TikZ styles
+\tikzset{
+  node box/.style={
+    draw, rectangle, rounded corners=4pt,
+    minimum width=3cm, minimum height=0.8cm,
+    fill=blue!8, draw=blue!40, thick,
+    font=\small
+  },
+  msg arrow/.style={
+    -Stealth, thick, draw=black!70
+  },
+  dashed arrow/.style={
+    -Stealth, dashed, draw=black!50
+  },
+  component/.style={
+    draw, rectangle, rounded corners=6pt,
+    minimum width=4.5cm, minimum height=1cm,
+    fill=gray!10, draw=gray!60, thick,
+    align=center,
+    font=\small\bfseries
+  },
+  layer/.style={
+    draw, rectangle, rounded corners=3pt,
+    fill=orange!8, draw=orange!40, thick,
+    font=\footnotesize
+  },
+}

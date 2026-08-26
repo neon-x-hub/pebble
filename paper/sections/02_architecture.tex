@@ -1,0 +1,167 @@
+% =============================================================================
+% Section 2 — System Architecture
+% =============================================================================
+\section{System Architecture}
+\label{sec:arch}
+
+\pebble{} is structured as a pnpm monorepo containing seven focused packages
+under the \texttt{@pebbl} namespace. This section describes the high-level
+architecture, the two-port separation strategy, and the inter-package dependency
+graph.
+
+\subsection{Node Architecture}
+
+Each \pebble{} node runs two independent TCP services bound to separate ports:
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\small]
+
+  % Outer node box
+  \draw[draw=gray!60, fill=gray!5, rounded corners=8pt, thick]
+    (-0.5, -0.2) rectangle (11.5, 7.2);
+  \node[anchor=north west, font=\bfseries\small] at (-0.3, 7.2)
+    {Pebble Peer Node};
+
+  % Gossip Server
+  \node[component, minimum width=4cm, minimum height=1.2cm, align=center]
+    (gossip) at (2.5, 6) {Gossip Server\\(\texttt{:7000})};
+  \node[font=\footnotesize, below=0pt of gossip, yshift=-0.1cm]
+    {Inter-node replication};
+
+  % Client Server
+  \node[component, minimum width=4cm, minimum height=1.2cm, align=center]
+    (client) at (8.5, 6) {Client Server\\(\texttt{:7001})};
+  \node[font=\footnotesize, below=0pt of client, yshift=-0.1cm]
+    {External client SDK};
+
+  % Store
+  \node[component, minimum width=9cm, minimum height=1.4cm,
+        fill=blue!8, draw=blue!40]
+    (store) at (5.5, 3.8) {Store (State Machine)};
+  \node[font=\footnotesize, below=0pt of store, yshift=-0.1cm]
+    {Current state $\cdot$ Mutation history $\cdot$ Version vector $\cdot$ LWW resolution};
+
+  % Persistence
+  \node[component, minimum width=9cm, minimum height=1.4cm,
+        fill=green!8, draw=green!40]
+    (persist) at (5.5, 1.4) {Persistence Layer};
+  \node[font=\footnotesize, below=0pt of persist, yshift=-0.1cm]
+    {Append-only NDJSON log $\cdot$ Point-in-time snapshots $\cdot$ Atomic metadata};
+
+  % Arrows
+  \draw[msg arrow] (gossip.south) -- ++(0,-0.5) -| (store.north);
+  \draw[msg arrow] (client.south) -- ++(0,-0.5) -| (store.north);
+  \draw[msg arrow] (store.south) -- (persist.north);
+  \draw[dashed arrow] (persist.north) -- node[right, font=\tiny]{recovery} (store.south);
+
+  % External labels
+  \node[font=\footnotesize\itshape, align=center, left=0.6cm of gossip] {Peer\\nodes};
+  \draw[msg arrow, dashed] (-0.3, 6) -- (gossip.west);
+  \node[font=\footnotesize\itshape, align=center, right=0.6cm of client] {Client\\SDK};
+  \draw[msg arrow, dashed] (client.east) -- (11.3, 6);
+
+\end{tikzpicture}
+\caption{Internal architecture of a \pebble{} peer node.}
+\label{fig:node-arch}
+\end{figure}
+
+\paragraph{Gossip Port (\texttt{:7000}).}
+Dedicated exclusively to inter-node communication. All gossip sessions begin
+with a 3-way challenge-response handshake (\cref{sec:nodeauth}) to mutually
+authenticate the connecting peer. Once established, the connection carries
+\msg{PING}/\msg{PONG} health probes and the 4-step symmetric synchronisation
+protocol (\cref{sec:gossip}). External clients never access this port.
+
+\paragraph{Client Port (\texttt{:7001}).}
+Dedicated to the external \pkg{client} SDK. Each connection undergoes a
+2-message credential challenge (\cref{sec:clientauth}) before any key-value
+operations are processed. Peer nodes never use this port.
+
+This strict separation simplifies permission enforcement, enables independent
+scaling of client-facing and replication-facing capacity, and eliminates any
+ambiguity about which authentication path applies to a given connection.
+
+\subsection{Package Dependency Graph}
+
+\pebble{} is factored into seven packages that form a strict layered dependency
+graph with no cycles:
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\small, node distance=1.2cm and 2.5cm]
+
+  \node[node box, minimum width=3.5cm] (types)   {\pkg{types}};
+
+  \node[node box, minimum width=3.5cm, below left=of types]
+    (crypto) {\pkg{crypto}};
+  \node[node box, minimum width=3.5cm, below right=of types]
+    (wire)   {\pkg{wire}};
+
+  \node[node box, minimum width=3.5cm, below right=of crypto]
+    (core)   {\pkg{core}};
+
+  \node[node box, minimum width=3.5cm, below left=of core]
+    (node)   {\pkg{node}};
+  \node[node box, minimum width=3.5cm, below right=of core]
+    (clnt)   {\pkg{client}};
+
+  \node[node box, minimum width=3.5cm, below=2.5cm of types, xshift=4cm]
+    (mod)    {\pkg{moderator}};
+
+  \draw[msg arrow] (crypto.north) -- (types.south west);
+  \draw[msg arrow] (wire.north)   -- (types.south east);
+  \draw[msg arrow] (core.north west) -- (crypto.south east);
+  \draw[msg arrow] (core.north east) -- (wire.south west);
+  \draw[msg arrow] (node.north) -- (core.south west);
+  \draw[msg arrow] (clnt.north) -- (core.south east);
+  \draw[msg arrow] (mod.north)  -- (crypto.south);
+
+\end{tikzpicture}
+\caption{Inter-package dependency graph. Arrows point from dependent to dependency.
+\pkg{moderator} is an offline utility with no runtime dependency on \pkg{node}.}
+\label{fig:dep-graph}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{Package responsibilities.}
+\label{tab:packages}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Package} & \textbf{Path} & \textbf{Responsibility} \\
+\midrule
+\pkg{types}     & \texttt{packages/types}     & Shared domain interfaces, protocol constants,
+                                                 error classes. Zero dependencies. \\
+\pkg{crypto}    & \texttt{packages/crypto}    & Ed25519 key generation, canonical JSON encoding,
+                                                 mutation and credential signing. \\
+\pkg{wire}      & \texttt{packages/wire}      & Length-type-payload TCP framing and stateful
+                                                 stream decoder. \\
+\pkg{core}      & \texttt{packages/core}      & In-memory Store, LWW conflict resolution,
+                                                 append-only log, snapshots, crash recovery. \\
+\pkg{node}      & \texttt{packages/node}      & Gossip engine, handshake, client server,
+                                                 health monitoring, top-level orchestrator. \\
+\pkg{client}    & \texttt{packages/client}    & Client SDK with multiplexed request tracking
+                                                 and automatic authentication. \\
+\pkg{moderator} & \texttt{packages/moderator} & Offline credential issuance and keypair
+                                                 generation. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Data Flow Summary}
+
+A write operation flows through the following components:
+
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{Client SDK} sends a \msg{PUT\_REQUEST} over the client port.
+  \item \textbf{Client Server} verifies the client's session, enforces
+        \texttt{read-write} permission, and forwards the request to the \textbf{Store}.
+  \item \textbf{Store} creates an immutable signed mutation, applies LWW
+        resolution, and emits a \texttt{mutation:applied} event.
+  \item \textbf{Pebble (orchestrator)} listens to the event and appends the
+        mutation to the \textbf{Mutation Log} with \texttt{fsync}.
+  \item \textbf{Gossip Engine} periodically connects to healthy peers and
+        transfers mutations they have not yet seen, as determined by comparing
+        version vectors.
+\end{enumerate}

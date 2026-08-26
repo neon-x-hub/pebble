@@ -1,0 +1,51 @@
+% =============================================================================
+% Section 16 — Conclusion
+% =============================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+
+This whitepaper has presented \pebble{}---a leaderless, eventually consistent,
+distributed key-value store built on a small set of composable primitives.
+
+The system's correctness rests on three interlocking formal foundations.
+First, the LWW total order (\cref{def:lww-order}, \cref{thm:total-order})
+ensures that any set of mutations for a key has a unique maximum element,
+and that every node in possession of the same set independently computes the
+same winner (\cref{thm:convergence}). Second, version vectors provide a
+compact summary of each node's history state, enabling the gossip protocol
+to compute precisely which mutations a peer is missing in $\Oof{N}$ time
+(\cref{sec:vv}). Third, Ed25519 signatures bound to canonical JSON encodings
+ensure that only authorised nodes can produce valid mutations and only
+moderator-credentialed clients can access the store (\cref{sec:crypto}).
+
+The 4-step symmetric gossip protocol (\cref{sec:gossip}) is deadlock-free,
+idempotent, and bandwidth-efficient: in steady state it transfers only the
+$\Delta M$ mutations since the last sync with a given peer. The expected
+cluster-wide convergence time is $\Theta(N \log N)$ rounds for fanout-1 gossip,
+converging to a few minutes for practical small-to-medium clusters
+(\cref{tab:convergence-table}).
+
+The eight core invariants (\cref{sec:invariants}) are enforced structurally
+by the implementation: global uniqueness by sequence collision detection,
+immutability by TypeScript readonly types, authenticity by mandatory signature
+verification on all network paths, and monotonicity by the $\max$-based vector
+advancement rule.
+
+\pebble{} is intentionally minimal in v0.1: no leader election, no consensus,
+no dynamic membership, no transport encryption. These choices make the system
+easy to reason about, easy to deploy, and easy to extend. The limitations
+documented in \cref{sec:limitations} and the roadmap in \cref{sec:future}
+chart a clear path toward a more capable system that preserves the leaderless,
+eventually consistent design philosophy.
+
+\paragraph{Implementation status.}
+\pebble{} is implemented in TypeScript on Node.js, structured as a pnpm
+monorepo of seven packages. The test suite comprises 121 automated tests
+covering unit logic, failure modes, and end-to-end multi-node scenarios
+including 3-node convergence, network partition healing, crash recovery,
+security rejection of forged mutations, and randomised chaos testing across
+hundreds of concurrent writes.
+
+\paragraph{Availability.}
+The source code is available at
+\url{https://github.com/neon-x-hub/pebble} under the MIT licence.

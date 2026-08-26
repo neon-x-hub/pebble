@@ -1,0 +1,142 @@
+% =============================================================================
+% Section 5 — Conflict Resolution (LWW)
+% =============================================================================
+\section{Conflict Resolution: Deterministic Last-Write-Wins}
+\label{sec:conflict}
+
+When two mutations target the same key and arrive at a node in different orders
+on different peers, the nodes must converge to the same winner without
+coordination. \pebble{} achieves this through a deterministic total order on
+mutations---Last-Write-Wins (LWW).
+
+\subsection{The LWW Total Order}
+
+\begin{definition}[LWW comparison]
+\label{def:lww-order}
+Define the relation $\lwwlt$ on mutations $a, b \in \MutSet$ as follows:
+\[
+  a \lwwlt b \;\iff\;
+  \begin{cases}
+    a.\mts < b.\mts, & \\
+    \text{or}\quad a.\mts = b.\mts \;\land\; a.\mnid <_{\mathrm{lex}} b.\mnid, & \\
+    \text{or}\quad a.\mts = b.\mts \;\land\; a.\mnid = b.\mnid
+               \;\land\; a.\mseq < b.\mseq. &
+  \end{cases}
+\]
+\end{definition}
+
+In prose: the mutation with the \emph{higher timestamp} wins. Ties are broken by
+the \emph{lexicographically later node ID}; this is arbitrary but stable across
+all nodes because every node applies the same comparison function. A further
+tiebreak on \emph{higher sequence} handles the degenerate case of two mutations
+from the same node with the same timestamp (possible under fast local writes).
+
+\begin{definition}[Winner]
+\label{def:winner}
+Given two mutations $a$ and $b$ for the same key, the winner is:
+\[
+  \win(a, b) =
+  \begin{cases}
+    b & \text{if } a \lwwlt b, \\
+    a & \text{otherwise.}
+  \end{cases}
+\]
+\end{definition}
+
+\subsection{Proof: $\lwwlt$ is a Strict Total Order}
+
+\begin{theorem}[$\lwwlt$ is a strict total order on $\MutSet$]
+\label{thm:total-order}
+The relation $\lwwlt$ is irreflexive, asymmetric, transitive, and total on
+the set of all mutations $\MutSet$.
+\end{theorem}
+
+\begin{proof}
+We verify each property:
+
+\paragraph{Irreflexivity.}
+$a \lwwlt a$ would require $a.\mts < a.\mts$ (false), or $a.\mts = a.\mts$ and
+$a.\mnid <_{\mathrm{lex}} a.\mnid$ (false), or all equal and $a.\mseq < a.\mseq$
+(false). Hence $a \not\lwwlt a$. \checkmark
+
+\paragraph{Asymmetry (implies antisymmetry).}
+Suppose $a \lwwlt b$. We show $b \not\lwwlt a$.
+If $a \lwwlt b$ holds because $a.\mts < b.\mts$, then $b.\mts > a.\mts$,
+so the first clause of $b \lwwlt a$ is false. The remaining clauses require
+$b.\mts = a.\mts$, which is also false. Hence $b \not\lwwlt a$.
+The remaining two cases proceed analogously by the asymmetry of $<$ and
+$<_{\mathrm{lex}}$. \checkmark
+
+\paragraph{Transitivity.}
+Suppose $a \lwwlt b$ and $b \lwwlt c$. We show $a \lwwlt c$ by case analysis
+on which clause governs each relation:
+\begin{itemize}[leftmargin=1.5em]
+  \item If $a.\mts < b.\mts$ and $b.\mts \leq c.\mts$, then $a.\mts < c.\mts$,
+        so the first clause of $a \lwwlt c$ holds.
+  \item If $a.\mts = b.\mts$ and $b.\mts = c.\mts$ (i.e., all equal), then
+        the governing clause is on $\mnid$ or $\mseq$, both of which are
+        transitively ordered by the transitivity of $<_{\mathrm{lex}}$ and $<$.
+  \item Mixed cases (e.g., $a.\mts < b.\mts$ and $b.\mts = c.\mts$) collapse
+        to $a.\mts < c.\mts$ by substitution. \checkmark
+\end{itemize}
+
+\paragraph{Totality.}
+For any $a \neq b$, either $a.\mts \neq b.\mts$ (handled by the first clause),
+or $a.\mnid \neq b.\mnid$ (handled by the second, since $<_{\mathrm{lex}}$ is
+total on strings), or $a.\mseq \neq b.\mseq$ (handled by the third, since $<$
+is total on integers). The only remaining case is $a = b$, which is excluded.
+Hence exactly one of $a \lwwlt b$ or $b \lwwlt a$ holds for $a \neq b$. \checkmark
+\end{proof}
+
+\subsection{Convergence Theorem}
+
+\begin{theorem}[Convergence under LWW]
+\label{thm:convergence}
+Let $n_1, n_2$ be two nodes that have received (in any order) the same set of
+mutations $M$ for a key $k$. Both nodes independently compute the same current
+value for $k$.
+\end{theorem}
+
+\begin{proof}
+By \cref{thm:total-order}, $\lwwlt$ is a strict total order on $\MutSet$.
+Therefore, the set $\{m \in M : m.\mkey = k\}$ has a unique maximum element
+$m^*$ under $\lwwlt$. The function $\win$ selects this maximum deterministically.
+Because $\win$ is a function solely of the mutation set---not of arrival
+order---both nodes compute the same $m^*$ regardless of the order in which
+they processed mutations from $M$. \qed
+\end{proof}
+
+\begin{corollary}[Eventual consistency]
+\label{cor:eventual}
+If the gossip protocol ensures that every mutation created at any node is
+eventually delivered to every other node (i.e., the network is eventually
+connected), then all nodes eventually agree on the value of every key.
+\end{corollary}
+
+\subsection{Implementation}
+
+The comparison function is implemented in \texttt{packages/core/src/store/conflict.ts}:
+
+\begin{lstlisting}[caption={LWW comparison function (TypeScript).}]
+export function compare(a: Mutation, b: Mutation): number {
+  if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
+  if (a.nodeId   !== b.nodeId)   return a.nodeId.localeCompare(b.nodeId);
+  return a.sequence - b.sequence;
+}
+
+export function winner(incumbent: Mutation, challenger: Mutation): Mutation {
+  return compare(challenger, incumbent) > 0 ? challenger : incumbent;
+}
+\end{lstlisting}
+
+A positive return value indicates the challenger wins; the Store updates
+\texttt{currentState[key]} only when the incoming mutation defeats the incumbent.
+
+\subsection{Clock Skew Limitation}
+
+The LWW order as defined relies on wall-clock timestamps. A node whose clock
+runs significantly behind can produce mutations that lose to older writes on
+other nodes, even if the losing mutation was authored later in real time.
+\pebble{} v0.1 accepts this trade-off for simplicity. \Cref{sec:future}
+discusses Hybrid Logical Clocks (HLC)~\cite{kulkarni2014hlc} as a path to
+causality-aware conflict resolution.

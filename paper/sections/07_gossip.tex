@@ -1,0 +1,155 @@
+% =============================================================================
+% Section 7 — Gossip Protocol
+% =============================================================================
+\section{Gossip Protocol: 4-Step Symmetric Synchronisation}
+\label{sec:gossip}
+
+\pebble{} uses a \emph{pull-based, symmetric gossip protocol}~\cite{demers1987epidemic,
+kermarrec2007gossip} for replication. Every \texttt{gossipIntervalMs} milliseconds,
+each node selects one healthy peer (random selection among healthy nodes) and
+runs a complete sync session with it.
+
+\subsection{Session Overview}
+
+Each gossip session consists of exactly four steps, alternating message ownership
+between the initiator and responder. Both sides make progress in each round.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\small, node distance=0.1cm]
+
+  % Column headers
+  \node (A) at (1.5, 8.5) {\textbf{Initiator (Node A)}};
+  \node (B) at (9.5, 8.5) {\textbf{Responder (Node B)}};
+  \draw[thick, gray!40] (3, 8.8) -- (3, -0.3);
+  \draw[thick, gray!40] (8, 8.8) -- (8, -0.3);
+  \draw[dashed, gray!30] (0.2, 8.2) -- (11, 8.2);
+
+  % Step 1 label
+  \node[font=\footnotesize\itshape, left] at (0.2, 7.6) {Step 1};
+
+  % DIGEST A -> B
+  \draw[msg arrow] (3, 7.6) -- (8, 7.2)
+    node[midway, above, font=\footnotesize]
+    {\msg{DIGEST}\{$V_A$\}};
+  % DIGEST B -> A
+  \draw[msg arrow] (8, 7.2) -- (3, 6.8)
+    node[midway, below, font=\footnotesize]
+    {\msg{DIGEST}\{$V_B$\}};
+
+  \draw[dashed, gray!30] (0.2, 6.5) -- (11, 6.5);
+  \node[font=\footnotesize\itshape, left] at (0.2, 6.1) {Step 2};
+
+  % REQUEST A -> B
+  \draw[msg arrow] (3, 6.1) -- (8, 5.7)
+    node[midway, above, font=\footnotesize]
+    {\msg{REQUEST}\{$\mathrm{missing}(V_B, V_A)$\}};
+  % MUTATIONS B -> A
+  \draw[msg arrow] (8, 5.7) -- (3, 5.3)
+    node[midway, below, font=\footnotesize]
+    {\msg{MUTATIONS}\{$m_1, \ldots, m_k$\}};
+
+  \draw[dashed, gray!30] (0.2, 5.0) -- (11, 5.0);
+  \node[font=\footnotesize\itshape, left] at (0.2, 4.6) {Step 3};
+
+  % REQUEST B -> A
+  \draw[msg arrow] (8, 4.6) -- (3, 4.2)
+    node[midway, below, font=\footnotesize]
+    {\msg{REQUEST}\{$\mathrm{missing}(V_A, V_B)$\}};
+  % MUTATIONS A -> B
+  \draw[msg arrow] (3, 4.2) -- (8, 3.8)
+    node[midway, above, font=\footnotesize]
+    {\msg{MUTATIONS}\{$m_1', \ldots, m_j'$\}};
+
+  \draw[dashed, gray!30] (0.2, 3.5) -- (11, 3.5);
+  \node[font=\footnotesize\itshape, left] at (0.2, 3.1) {Step 4};
+
+  % ACK A -> B
+  \draw[msg arrow] (3, 3.1) -- (8, 2.7)
+    node[midway, above, font=\footnotesize]
+    {\msg{ACK}\{\texttt{ok: true}\}};
+  % ACK B -> A
+  \draw[msg arrow] (8, 2.7) -- (3, 2.3)
+    node[midway, below, font=\footnotesize]
+    {\msg{ACK}\{\texttt{ok: true}\}};
+
+  % Lifecycle lines
+  \draw[thick] (3, 8.2) -- (3, 1.8);
+  \draw[thick] (8, 8.2) -- (8, 1.8);
+
+\end{tikzpicture}
+\caption{4-step symmetric gossip protocol. After exchanging DIGESTs, each side
+requests and receives the mutations it is missing.}
+\label{fig:gossip-protocol}
+\end{figure}
+
+\subsection{Step-by-Step Description}
+
+\paragraph{Step 1 — DIGEST exchange.}
+Both nodes send their current version vectors simultaneously. After this step,
+each node holds both $V_A$ and $V_B$ and can independently compute the ranges
+that the other is missing.
+
+\paragraph{Step 2 — Initiator requests and receives.}
+The initiator computes $\mathrm{missing}(V_B, V_A)$ (what $A$ needs from $B$)
+and sends a \msg{REQUEST} message. The responder looks up the requested
+mutations in its history and sends them in a \msg{MUTATIONS} message. The
+initiator applies each received mutation through the store's
+\texttt{applyMutation} pipeline (including signature verification).
+
+\paragraph{Step 3 — Responder requests and receives.}
+The responder computes $\mathrm{missing}(V_A, V_B)$ (what $B$ needs from $A$)
+and sends a \msg{REQUEST}. The initiator replies with the matching mutations.
+
+\paragraph{Step 4 — ACK.}
+Both sides send \msg{ACK} to signal successful completion. The gossip engine
+records a successful round and updates the peer's health state.
+
+\subsection{Protocol Properties}
+
+\begin{theorem}[Deadlock freedom]
+\label{thm:deadlock-free}
+The 4-step gossip protocol is deadlock-free.
+\end{theorem}
+
+\begin{proof}
+The message sequence is fixed and deterministic: initiator sends, then
+responder sends, alternating for exactly 4 sub-steps. Neither side waits for
+the other to initiate a send before completing its own step. Each
+\texttt{send}/\texttt{receive} call on a connection is backed by a buffered
+TCP socket; a send never blocks waiting for the remote side to call \texttt{receive}
+on the same message. Since the turn sequence is fixed and finite, no circular
+waiting condition can arise. \qed
+\end{proof}
+
+\begin{theorem}[Idempotency]
+\label{thm:idempotent}
+Applying a mutation that has already been applied is a no-op.
+\end{theorem}
+
+\begin{proof}
+Before applying any mutation $m$, \texttt{applyMutation} checks whether
+$\mathrm{id}(m)$ already exists in the history map $H$. If it does, and the
+stored content is byte-for-byte identical, the function returns \texttt{false}
+without modifying state. If the stored content differs (a sequence collision),
+an error is thrown (see Invariant~\ref{inv:uniqueness}). In the normal case,
+duplicate mutations are silently dropped, making gossip delivery idempotent. \qed
+\end{proof}
+
+\subsection{Gossip Target Selection}
+
+In each round, the \texttt{GossipEngine} calls
+\texttt{PeerHealth.selectGossipTarget()}, which returns a random healthy peer
+or \texttt{null} if none are available. This provides a simple, unbiased
+gossip fanout of 1 per interval. The expected number of rounds for a mutation
+to reach all $N$ nodes is $\Oof{N \log N}$ (see \cref{sec:complexity}).
+
+\subsection{Health Monitoring}
+
+The \texttt{Pinger} sends \msg{PING} messages to all peers every
+\texttt{pingIntervalMs} milliseconds (default: 2,000\,ms) on the gossip port.
+A peer is marked \emph{unhealthy} if no successful communication has been
+observed in the past \texttt{unhealthyThresholdMs} milliseconds (default:
+10,000\,ms). Unhealthy peers are excluded from gossip target selection but
+remain in the configuration; they are automatically restored to healthy status
+upon the next successful handshake.

@@ -1,0 +1,137 @@
+% =============================================================================
+% Section 9 — Client Authentication & Permission System
+% =============================================================================
+\section{Client Authentication and Permission System}
+\label{sec:clientauth}
+
+External clients connect to the client port (\texttt{:7001}) and must present a
+moderator-issued credential before any key-value operations are processed.
+Authentication is performed through a 3-message challenge-response sequence.
+
+\subsection{Authentication Protocol}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\small]
+
+  \node at (2, 7.0) {\textbf{Node}};
+  \node at (9, 7.0) {\textbf{Client}};
+  \draw[thick] (2, 6.7) -- (2, 0.8);
+  \draw[thick] (9, 6.7) -- (9, 0.8);
+
+  % Step 1
+  \node[font=\footnotesize\itshape, left] at (0.5, 6.0) {Step 1};
+  \draw[msg arrow] (2, 6.0) -- (9, 5.6)
+    node[midway, above, font=\scriptsize]
+    {\msg{AUTH\_CHALLENGE}\{nonce\}};
+
+  % Step 2
+  \node[font=\footnotesize\itshape, left] at (0.5, 5.0) {Step 2};
+  \draw[msg arrow] (9, 5.2) -- (2, 4.8)
+    node[midway, below, font=\scriptsize]
+    {\msg{AUTH\_RESPONSE}\{$C$, $\mathrm{sig}_{sk_c}(\mathrm{nonce})$\}};
+
+  % Verification block
+  \node[draw, rounded corners=4pt, fill=yellow!10, draw=orange!50,
+        minimum width=4cm, minimum height=1.6cm, font=\scriptsize, align=left]
+    (verify) at (2, 3.5) {
+      \textbf{Node verifies:}\\
+      1.\ $\mathrm{sig}_{\mathrm{mod}}$ on $C$\\
+      2.\ $t_{\mathrm{now}} \leq C.t_{\mathrm{expires}}$\\
+      3.\ $\mathrm{sig}_{sk_c}(\mathrm{nonce})$ with $C.pk_c$
+    };
+
+  % Step 3
+  \node[font=\footnotesize\itshape, left] at (0.5, 2.1) {Step 3};
+  \draw[msg arrow] (2, 2.1) -- (9, 1.7)
+    node[midway, above, font=\scriptsize]
+    {\msg{AUTH\_ACK}\{accepted, permissions\}};
+
+\end{tikzpicture}
+\caption{Client authentication protocol. $C$ is the credential bundle; $sk_c$
+is the client's private key; $\mathrm{sig}_{\mathrm{mod}}$ is the moderator's
+signature embedded in $C$.}
+\label{fig:client-auth}
+\end{figure}
+
+\subsection{Step-by-Step Description}
+
+\paragraph{Step 1 — AUTH\_CHALLENGE.}
+Upon connection, the node generates a fresh 128-bit nonce and sends it
+immediately:
+\[
+  \mathrm{Node} \to \mathrm{Client}:\; \msg{AUTH\_CHALLENGE}\{\mathrm{nonce}\}
+\]
+The client has a configurable timeout to respond.
+
+\paragraph{Step 2 — AUTH\_RESPONSE.}
+The client sends its credential bundle $C$ (as defined in
+\cref{def:credential}) and a signature of the nonce under its private key:
+\[
+  \mathrm{Client} \to \mathrm{Node}:\;
+  \msg{AUTH\_RESPONSE}\bigl\{C,\; \mathrm{sig}_{sk_c}(\mathrm{nonce})\bigr\}
+\]
+
+\paragraph{Step 3 — Verification and AUTH\_ACK.}
+The node performs three sequential checks:
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{Moderator signature.}
+    $\mathrm{Ed25519Verify}(pk_{\mathrm{mod}},\; \mathrm{canonicalEncode}(C \setminus \{\msig_{\mathrm{mod}}\}),\; C.\msig_{\mathrm{mod}})$
+    must hold, using $pk_{\mathrm{mod}}$ from the cluster configuration.
+
+  \item \textbf{Credential expiry.}
+    If $C.t_{\mathrm{expires}} \neq \bot$, then
+    $\mathrm{now}() \leq C.t_{\mathrm{expires}}$ must hold.
+
+  \item \textbf{Proof of key possession.}
+    $\mathrm{Ed25519Verify}(C.pk_c,\; \mathrm{nonce},\; \mathrm{sig}_{sk_c}(\mathrm{nonce}))$
+    must hold.
+\end{enumerate}
+If all checks pass, the node sends:
+\[
+  \mathrm{Node} \to \mathrm{Client}:\;
+  \msg{AUTH\_ACK}\{\mathrm{accepted}: \top,\; C.\mathrm{perm}\}
+\]
+On any failure, the node sends an \msg{ERROR} and closes the connection.
+
+\subsection{Permission Enforcement}
+
+After authentication, the node associates the connection with a session record
+$\{clientId, permissions, pk_c\}$. All subsequent requests are dispatched
+through the client handler, which enforces:
+
+\begin{table}[H]
+\centering
+\caption{Operation permission matrix.}
+\label{tab:permissions}
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Operation} & \textbf{read-only} & \textbf{read-write} \\
+\midrule
+\msg{GET\_REQUEST}     & \checkmark & \checkmark \\
+\msg{KEYS\_REQUEST}    & \checkmark & \checkmark \\
+\msg{ENTRIES\_REQUEST} & \checkmark & \checkmark \\
+\msg{PUT\_REQUEST}     & \texttimes & \checkmark \\
+\msg{DELETE\_REQUEST}  & \texttimes & \checkmark \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+A \texttt{read-only} client that attempts a \msg{PUT\_REQUEST} or
+\msg{DELETE\_REQUEST} receives a \msg{PERMISSION\_DENIED} error immediately;
+no state is modified.
+
+\subsection{Security Properties}
+
+The client authentication mechanism provides:
+\begin{description}[leftmargin=1.5em]
+  \item[Unforgeability.] Only the moderator can issue valid credentials.
+        No network access or node coordination is required for issuance.
+  \item[Key binding.] The nonce signature proves the connecting client
+        holds the private key matching the credential's embedded public key,
+        preventing credential transfer or replay by a third party.
+  \item[Freshness.] The nonce is generated per connection. Captured traffic
+        cannot be replayed.
+  \item[Expiry.] Credentials can be issued with a finite lifetime; compromised
+        credentials are automatically rejected after $t_{\mathrm{expires}}$.
+\end{description}

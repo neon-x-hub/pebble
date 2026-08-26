@@ -10,8 +10,8 @@ dist/
 coverage/
 .nyc_output/
 
-# Logs and runtime dumps
-*.log
+# Logs and runtime dumps (all directories)
+**/*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -39,3 +39,22 @@ Thumbs.db
 
 # Drafts
 .drafts/
+
+# LaTeX build artifacts (paper/)
+paper/*.aux
+paper/*.bbl
+paper/*.blg
+paper/*.fdb_latexmk
+paper/*.fls
+paper/*.out
+paper/*.synctex.gz
+paper/*.synctex(busy)
+paper/*.toc
+paper/*.lof
+paper/*.lot
+paper/*.lol
+paper/*.nav
+paper/*.snm
+paper/*.vrb
+paper/*.dvi
+paper/*.xdv

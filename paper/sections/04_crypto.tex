@@ -1,0 +1,145 @@
+% =============================================================================
+% Section 4 — Cryptographic Layer
+% =============================================================================
+\section{Cryptographic Layer}
+\label{sec:crypto}
+
+\pebble{} uses Ed25519~\cite{bernstein2012ed25519,rfc8032} for all digital
+signatures. Ed25519 offers 128-bit security, fast verification, small 64-byte
+signatures, and no per-signature randomness requirement, making it well-suited
+for a high-throughput distributed system.
+
+\subsection{Node Identity and Key Derivation}
+
+Each node possesses a unique cryptographic identity generated once and persisted
+to \texttt{\{dataDir\}/identity.json}.
+
+\begin{definition}[Node identity]
+A node's identity is a triple $\mathcal{I} = (\mathrm{nodeId},\, pk,\, sk)$
+where:
+\begin{itemize}[leftmargin=1.5em]
+  \item $(pk, sk)$ is an Ed25519 key pair. $pk \in \{0,1\}^{256}$,
+        $sk \in \{0,1\}^{256}$ (the seed).
+  \item $\mathrm{nodeId} = \mathrm{base64url}\bigl(\mathrm{SHA\text{-}256}(pk)\bigr)$
+        is the globally unique node identifier, derived deterministically from the
+        public key.
+\end{itemize}
+\end{definition}
+
+The identity file is created on first start and loaded on subsequent starts,
+ensuring the same \texttt{nodeId} across restarts. The private key seed is
+stored in hex encoding and never transmitted over any network interface.
+
+\subsection{Canonical JSON Serialisation}
+
+To produce a deterministic byte sequence for signing, \pebble{} implements a
+canonical JSON encoder inspired by RFC~8785~\cite{rfc8785}.
+
+\begin{definition}[Canonical encoding]
+\label{def:canonical}
+$\mathrm{canonicalEncode}(v)$ serialises a JSON-compatible value $v$ to a
+UTF-8 byte string such that:
+\begin{enumerate}[leftmargin=1.5em]
+  \item Object keys are sorted lexicographically by their UTF-16 code units
+        (matching the ECMAScript \texttt{localeCompare} order).
+  \item No insignificant whitespace is emitted.
+  \item Numbers are represented in their shortest round-trip form.
+  \item String escaping follows JSON specification.
+\end{enumerate}
+\end{definition}
+
+The canonical encoder is the only source of truth for the byte sequence
+presented to the signing primitive. Any serialisation discrepancy would cause
+valid signatures to appear invalid; therefore the encoder is tested with a
+deterministic golden-value test suite.
+
+\subsection{Mutation Signing and Verification}
+
+\begin{definition}[Signable mutation fields]
+The \emph{signable fields} of a mutation $m$ are all fields except $\msig$
+itself:
+\[
+  m_{\text{sign}} =
+    \langle m.\mnid,\; m.\mseq,\; m.\mts,\; m.\mop,\; m.\mkey,\; m.\mval \rangle
+\]
+\end{definition}
+
+\begin{protocol}[Mutation signing]
+To create a signed mutation at node $n$ with identity $\mathcal{I}_n$:
+\begin{enumerate}[leftmargin=1.5em]
+  \item Assemble $m_{\text{sign}}$ with all fields populated.
+  \item Compute $b = \mathrm{canonicalEncode}(m_{\text{sign}})$.
+  \item Compute $\msig = \mathrm{Ed25519Sign}(sk_n,\, b)$.
+  \item Return $m = m_{\text{sign}} \cup \{\msig\}$.
+\end{enumerate}
+\end{protocol}
+
+\begin{protocol}[Mutation verification]
+\label{proto:verify-mut}
+To verify a mutation $m$ received from a peer, given the originating node's
+public key $pk_{\mnid}$ obtained from the cluster configuration:
+\begin{enumerate}[leftmargin=1.5em]
+  \item Extract $m_{\text{sign}} = m \setminus \{\msig\}$.
+  \item Compute $b = \mathrm{canonicalEncode}(m_{\text{sign}})$.
+  \item Return $\mathrm{Ed25519Verify}(pk_{\mnid},\, b,\, m.\msig)$.
+\end{enumerate}
+If the originating \texttt{nodeId} is not present in the cluster configuration,
+verification fails with an \texttt{UnknownNodeError} before the signature is
+even checked.
+\end{protocol}
+
+\begin{remark}[Startup recovery bypass]
+During crash recovery (\cref{sec:persistence}), mutations are replayed from the
+local on-disk log with signature verification \emph{skipped}. This is safe
+because:
+(1)~the log is written by the local node and protected by OS file permissions;
+(2)~any mutation in the log was either created locally (and therefore valid) or
+received from a peer and verified at application time before being persisted.
+The \texttt{skipSignatureVerification} flag is never set for mutations received
+over the network.
+\end{remark}
+
+\subsection{Moderator Credential System}
+
+External client access is controlled through a lightweight certificate-authority
+(CA) model. The \emph{moderator} is an offline entity that holds the cluster's
+root signing key.
+
+\begin{definition}[Client credential]
+\label{def:credential}
+A \emph{client credential} is a 6-tuple signed by the moderator:
+\[
+  C = \langle \mathit{clientId},\; pk_c,\; \mathit{perm},\;
+              t_{\text{issued}},\; t_{\text{expires}},\; \msig_{\text{mod}} \rangle
+\]
+where:
+\begin{itemize}[leftmargin=1.5em]
+  \item $\mathit{clientId}$ is a human-readable client identifier.
+  \item $pk_c \in \{0,1\}^{256}$ is the client's Ed25519 public key.
+  \item $\mathit{perm} \in \{\texttt{read-only},\; \texttt{read-write}\}$ is
+        the access level granted.
+  \item $t_{\text{issued}},\; t_{\text{expires}} \in \mathbb{Z}$ are Unix
+        millisecond timestamps ($t_{\text{expires}} = \bot$ for no expiry).
+  \item $\msig_{\text{mod}} = \mathrm{Ed25519Sign}\bigl(sk_{\text{mod}},\;
+        \mathrm{canonicalEncode}(\langle\mathit{clientId}, pk_c, \mathit{perm},
+        t_{\text{issued}}, t_{\text{expires}}\rangle)\bigr)$.
+\end{itemize}
+\end{definition}
+
+Credential issuance is performed offline using \pkg{moderator} and does not
+require modifying \texttt{cluster.json} or restarting running nodes. The
+moderator's public key $pk_{\text{mod}}$ is stored in the cluster configuration
+and used by every node to verify incoming credentials.
+
+\begin{remark}[Security properties]
+The credential system provides:
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Unforgeability}: only the holder of $sk_{\text{mod}}$ can issue
+        valid credentials.
+  \item \textbf{Expiry enforcement}: nodes reject credentials where
+        $\mathrm{now}() > t_{\text{expires}}$.
+  \item \textbf{Key binding}: during the AUTH handshake, the client proves
+        possession of $sk_c$ by signing a fresh nonce, preventing credential
+        replay from a different identity.
+\end{itemize}
+\end{remark}

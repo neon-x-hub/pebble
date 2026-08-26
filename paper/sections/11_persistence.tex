@@ -1,0 +1,124 @@
+% =============================================================================
+% Section 11 — Persistence & Crash Recovery
+% =============================================================================
+\section{Persistence and Crash Recovery}
+\label{sec:persistence}
+
+Every \pebble{} node persists its state to an isolated data directory
+(\texttt{dataDir}). The persistence layer ensures that no acknowledged
+mutation is lost across node restarts and that the node can reconstruct its
+full in-memory state on startup.
+
+\subsection{On-Disk Layout}
+
+\begin{lstlisting}[caption={Data directory layout.}, language={}]
+dataDir/
+  identity.json          # Node keypair and nodeId (generated once)
+  metadata.json          # Atomic sequence and vector counter
+  mutations.log          # Append-only NDJSON mutation log (with fsync)
+  snapshots/
+    2026-08-20T00-00-00-000Z.snapshot.json
+    2026-08-21T00-00-00-000Z.snapshot.json
+    ...
+\end{lstlisting}
+
+\subsection{Append-Only Mutation Log}
+
+The \texttt{MutationLog} (\texttt{packages/core/src/persistence/log.ts})
+appends each accepted local mutation to \texttt{mutations.log} as a single
+newline-delimited JSON record (NDJSON format). Each append is followed by an
+\texttt{fsync} call to flush the kernel buffer to durable storage before the
+mutation is acknowledged to the caller.
+
+\begin{definition}[Durability guarantee]
+A mutation $m$ is \emph{durable} at node $n$ if $m$ has been serialised to
+\texttt{mutations.log} and the \texttt{fsync} call has returned. Durable
+mutations survive process crashes, OS crashes, and power failures (assuming the
+storage medium respects \texttt{fsync} semantics).
+\end{definition}
+
+\begin{remark}[Gossip-received mutations]
+Mutations received via gossip from peer nodes are applied to the in-memory store
+and emitted as \texttt{mutation:applied} events. The orchestrator (\texttt{Pebble}
+class) listens for these events and appends received mutations to the log as
+well, ensuring that any mutation in the in-memory state is also represented
+on disk.
+\end{remark}
+
+\subsection{Snapshots}
+
+Taking a snapshot serialises the entire current state (including tombstones)
+and the current version vector to a JSON file in \texttt{snapshots/}:
+
+\begin{definition}[Snapshot]
+A \emph{snapshot} $\mathcal{S}$ is a tuple
+\[
+  \mathcal{S} = \langle \mathit{version},\; t_\mathcal{S},\; V,\;
+                        \mathit{nextSeq},\; S \rangle
+\]
+where $V$ is the version vector at snapshot time, $\mathit{nextSeq}$ is the
+next local sequence number, and $S$ is the current state map
+(key $\to$ winning mutation, including tombstones).
+\end{definition}
+
+Snapshot filenames are ISO 8601 timestamps safe for all operating systems
+(colons replaced with hyphens). Lexicographic sort of filenames corresponds to
+chronological order, enabling simple latest-snapshot selection.
+
+Snapshots serve two purposes:
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{Faster recovery}: recovery needs only to replay log entries
+        after the snapshot timestamp, rather than the full history.
+  \item \textbf{Log truncation (future)}: once a snapshot is taken, older log
+        entries that predate the snapshot can safely be discarded (\cref{sec:future}).
+\end{enumerate}
+
+\subsection{Crash Recovery Pipeline}
+
+On node startup, the \texttt{recover} function reconstructs in-memory state
+from the on-disk data:
+
+\begin{algorithm}[H]
+\caption{Node crash recovery (\texttt{recover})}
+\label{alg:recovery}
+\begin{algorithmic}[1]
+\Require Node \texttt{dataDir}, empty \texttt{store}, \texttt{nodeId}
+\State $\mathcal{S} \leftarrow \texttt{loadLatestSnapshot(dataDir)}$
+\State $\mathcal{M} \leftarrow \texttt{loadMetadata(dataDir)}$
+\State $\mathit{nextSeq} \leftarrow \mathcal{M}.\mathit{nextLocalSequence}$
+
+\If{$\mathcal{S} \neq \bot$}
+  \State $\texttt{store.importSnapshot}(\mathcal{S}.S,\; \mathcal{S}.V,\; \mathcal{S}.\mathit{nextSeq})$
+  \State $\mathit{nextSeq} \leftarrow \max(\mathit{nextSeq},\; \mathcal{S}.\mathit{nextSeq})$
+\Else
+  \State $\texttt{store.setNextLocalSequence}(\mathit{nextSeq})$
+\EndIf
+
+\State $\mathit{log} \leftarrow \texttt{MutationLog(dataDir).readAll()}$
+\For{each mutation $m$ in $\mathit{log}$}
+  \State $\texttt{store.applyMutation}(m,\; \{\mathit{skipSignatureVerification}: \top\})$
+  \If{$m.\mnid = \mathit{nodeId}$}
+    \State $\mathit{nextSeq} \leftarrow \max(\mathit{nextSeq},\; m.\mseq + 1)$
+  \EndIf
+\EndFor
+
+\State $\texttt{store.setNextLocalSequence}(\mathit{nextSeq})$
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{Correctness argument.}
+The log replay is idempotent: duplicate mutations (e.g., those already covered
+by the snapshot) are silently skipped by the store's duplicate detection.
+Mutations that arrived after the snapshot timestamp but before the crash are
+replayed in full. The $\mathit{nextSeq}$ watermark is advanced to be strictly
+greater than any local sequence seen, preventing sequence number reuse across
+restarts (Invariant~\ref{inv:mono-seq}).
+
+\subsection{Corrupted Log Tail}
+
+If the node crashed mid-write, the last line of \texttt{mutations.log} may be
+a truncated, invalid JSON record. The log reader handles this by discarding any
+trailing partial line (lines that do not parse as valid mutations are skipped
+with a warning). Since the line was not yet synced (the process crashed before
+\texttt{fsync} returned), it was never acknowledged, and discarding it
+preserves the durability guarantee.

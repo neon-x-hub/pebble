@@ -1,0 +1,140 @@
+% =============================================================================
+% Section 15 — Future Work
+% =============================================================================
+\section{Future Work}
+\label{sec:future}
+
+This section outlines the planned evolution of \pebble{} beyond v0.1, grouped
+by impact and estimated implementation complexity.
+
+\subsection{Hybrid Logical Clocks (HLC)}
+
+\textbf{Motivation:} Replace physical wall-clock timestamps with Hybrid Logical
+Clocks~\cite{kulkarni2014hlc} to capture causality between events, even under
+clock skew.
+
+\textbf{Approach:} Each node maintains an HLC state $(l, c)$ where $l$ is the
+maximum of the local physical clock and the highest $l$ seen in received
+messages, and $c$ is a counter that breaks ties at the same $l$ value. The HLC
+advances monotonically and satisfies $l \geq \mathrm{now}()$ at all times,
+ensuring that causally later events always receive larger HLC values.
+
+\textbf{Impact:} The LWW comparison function (\cref{def:lww-order}) would
+replace $m.\mts$ with the HLC value, eliminating clock-skew-induced inversions.
+The mutation wire format would add an HLC component alongside the physical
+timestamp. Backward compatibility requires a protocol version bump.
+
+\subsection{Sparse Version Vectors}
+
+\textbf{Motivation:} Remove the contiguous-sequence assumption to support
+out-of-order mutation delivery and multi-path replication.
+
+\textbf{Approach:} Replace the high-water mark integer $V[n]$ with a compact
+set representation of received sequence numbers (e.g., a sorted interval list
+or a roaring bitmap~\cite{riak2010}). The \texttt{getMissingRanges} function
+would compute gaps in the received set rather than the single suffix above the
+watermark.
+
+\textbf{Impact:} Memory overhead per node increases by a constant factor. Gossip
+requests become slightly larger (a list of gaps rather than a single range).
+Enables future UDP-based or multi-path gossip without correctness risk.
+
+\subsection{History Compaction and Tombstone GC}
+
+\textbf{Motivation:} Bound memory and on-disk storage by discarding history
+entries for mutations that are no longer needed for gossip sync.
+
+\textbf{Approach:} Periodically take a snapshot and promote it to a
+\emph{stable checkpoint}. All history entries for mutations covered by the
+checkpoint can be discarded. Gossip peers that have not yet received those
+mutations must be directed to fetch the snapshot instead of individual mutations
+(a form of state transfer).
+
+Tombstone GC requires additional coordination: a tombstone can only be discarded
+if all nodes in the cluster have seen it. A simple mechanism is a cluster-wide
+minimum version vector: $V_{\min}[n] = \min_{i} V_i[n]$ over all nodes. History
+entries with sequence $\leq V_{\min}[n]$ are safe to discard.
+
+\textbf{Impact:} Bounds $|H|$ to $\Oof{K}$ after compaction (one entry per key).
+Requires nodes that fall far behind to perform a full state transfer rather than
+incremental gossip.
+
+\subsection{Dynamic Cluster Membership}
+
+\textbf{Motivation:} Allow nodes to join or leave the cluster without restarting
+all nodes or manually editing \texttt{cluster.json}.
+
+\textbf{Approach:} Represent the cluster membership as a CRDT (e.g., a 2P-Set
+or OR-Set) replicated through the gossip protocol. A joining node broadcasts a
+signed join request; existing nodes add it to the membership CRDT and begin
+gossiping with it. A leaving node broadcasts a signed leave message. The
+moderator signs membership changes to prevent rogue nodes from injecting
+themselves.
+
+\textbf{Impact:} Eliminates the need for out-of-band cluster reconfiguration.
+Requires all nodes to run a compatible membership CRDT implementation.
+
+\subsection{Multi-Key Transactions}
+
+\textbf{Motivation:} Provide atomic read-modify-write and multi-key update
+semantics for applications that require them.
+
+\textbf{Approach:} Two candidate approaches:
+\begin{enumerate}[leftmargin=1.5em]
+  \item \textbf{Optimistic concurrency control (OCC):} The client reads a set
+        of keys with their current version vectors, applies changes, and submits
+        a conditional write that is rejected if any observed version has changed.
+        Conflicts are retried by the client.
+  \item \textbf{Saga pattern:} Multi-key updates are composed as a sequence of
+        compensating single-key mutations. Partial failures leave a detectable
+        intermediate state that can be rolled back.
+\end{enumerate}
+Full distributed serialisable transactions would require a consensus layer
+(contradicting the leaderless design goal) and are not planned.
+
+\subsection{TLS Transport Encryption}
+
+\textbf{Motivation:} Protect mutation contents and client credentials from
+on-path eavesdroppers.
+
+\textbf{Approach:} Wrap both the gossip port and the client port in TLS 1.3.
+Peer authentication during the TLS handshake can reuse the existing Ed25519
+keys, eliminating the need for a separate PKI (mTLS with self-signed certs
+derived from the Ed25519 identity). The application-level handshake
+(\cref{sec:nodeauth}) could be simplified or merged with the TLS handshake.
+
+\subsection{Configurable Gossip Fanout}
+
+\textbf{Motivation:} Reduce convergence time for large clusters by initiating
+$f > 1$ gossip sessions per interval.
+
+\textbf{Approach:} Expose a \texttt{gossipFanout} parameter in
+\texttt{cluster.json}. The \texttt{GossipEngine} selects $f$ random healthy
+peers per interval and runs sessions concurrently. Expected convergence time
+drops to $\Theta(\log_f N)$ rounds, as each round covers an $f$-fold more ground.
+
+\subsection{Read Repair and Anti-Entropy}
+
+\textbf{Motivation:} Detect and repair state divergence that persists beyond
+the normal gossip window (e.g., due to prolonged partitions or log corruption
+on a specific node).
+
+\textbf{Approach:} A periodic anti-entropy pass computes a Merkle tree over
+the current state and compares digests with all peers. Divergent subtrees are
+repaired by re-exchanging the affected mutations. This provides a background
+consistency guarantee independent of the gossip fanout.
+
+\subsection{Read Consistency Modes}
+
+\textbf{Motivation:} Offer stronger read guarantees for applications that need
+them, without abandoning the leaderless design for writes.
+
+\textbf{Approach:} Two optional read modes:
+\begin{description}[leftmargin=1.5em]
+  \item[Read-your-writes:] After a write at node $n$, route subsequent reads
+        for the same key to $n$ until the version has propagated.
+  \item[Monotonic reads:] Track a client-side version vector; reject reads from
+        nodes whose vector does not dominate the client's last-observed vector.
+\end{description}
+Both modes are implementable without consensus and add only client-side
+bookkeeping overhead.

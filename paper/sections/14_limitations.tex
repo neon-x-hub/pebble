@@ -1,0 +1,106 @@
+% =============================================================================
+% Section 14 — Known Limitations
+% =============================================================================
+\section{Known Limitations (v0.1)}
+\label{sec:limitations}
+
+The current version of \pebble{} makes several deliberate simplifications that
+limit its applicability in certain scenarios. This section catalogues each
+limitation honestly, explains why it exists, and references the corresponding
+future-work item.
+
+\subsection{Physical Wall-Clock Timestamps}
+
+\textbf{Impact:} The LWW total order uses $m.\mts$ as the primary comparison
+key (\cref{def:lww-order}). Nodes with skewed clocks can produce mutations that
+lose to older writes from well-clocked nodes, even when the skewed node's write
+is causally later.
+
+\textbf{Example:} Node $A$'s clock is 5\,s behind. Node $B$ writes $k = v_1$ at
+$t = 1000$. Node $A$ writes $k = v_2$ at $t = 997$ (real time 1002). Despite
+$A$'s write being causally later, $v_1$ wins because $1000 > 997$.
+
+\textbf{Severity:} Low in practice for clusters with NTP-synchronised clocks
+(typical drift $< 100\,\text{ms}$), but potentially problematic in WAN deployments
+or environments with unreliable time sources.
+
+\textbf{Planned fix:} Hybrid Logical Clocks~\cite{kulkarni2014hlc} (\cref{sec:future}).
+
+\subsection{Contiguous-Sequence Assumption in Version Vectors}
+
+\textbf{Impact:} \pebble{}'s version vector records only the highest sequence
+seen from each node, implying that all lower sequences have been received.
+This assumption holds only when mutations arrive in order within a single TCP
+connection. If future versions add parallel or unreliable delivery, the
+high-water mark can skip over missing mutations.
+
+\textbf{Severity:} Currently safe, because all gossip delivery occurs over a
+single ordered TCP stream per session. Not safe if multi-path delivery or
+UDP-based gossip is introduced without a corresponding change to the vector
+representation.
+
+\textbf{Planned fix:} Sparse version vectors using bitmap or interval-tree
+representation (\cref{sec:future}).
+
+\subsection{Unbounded History Growth}
+
+\textbf{Impact:} The mutation history $H$ retains every mutation ever seen.
+Memory usage grows linearly with total mutation count $M$ with no bound.
+On-disk log size also grows unboundedly.
+
+\textbf{Severity:} High for long-running deployments with high write throughput.
+A node writing 1,000 mutations/second accumulates $\sim$86 million mutations
+per day, each consuming roughly 200 bytes, resulting in $\sim$17\,GB/day.
+
+\textbf{Planned fix:} Snapshot-based GC that discards log entries and history
+entries for mutations older than the latest snapshot, retaining only
+the winning mutation per key (\cref{sec:future}).
+
+\subsection{No Multi-Key Atomicity}
+
+\textbf{Impact:} \pebble{} does not support multi-key transactions. A client
+performing a sequence of puts over a key group has no guarantee that an
+intermediate state (some keys updated, others not) is invisible to concurrent
+readers.
+
+\textbf{Severity:} Applications requiring atomic updates to multiple keys (e.g.,
+transferring a value from key $A$ to key $B$) cannot be implemented correctly
+with \pebble{} v0.1.
+
+\textbf{Planned fix:} Optimistic concurrency control or saga patterns
+(\cref{sec:future}).
+
+\subsection{Static Cluster Membership}
+
+\textbf{Impact:} The set of nodes is defined at startup via \texttt{cluster.json}.
+Adding or removing a node requires updating the configuration file and
+restarting all nodes to reload it. There is no online join/leave mechanism.
+
+\textbf{Severity:} Moderate. Affects operational flexibility but not correctness;
+the cluster continues to function with the existing node set.
+
+\textbf{Planned fix:} A CRDT-based membership view with Paxos-free join/leave
+propagation (\cref{sec:future}).
+
+\subsection{Gossip Fanout Fixed at 1}
+
+\textbf{Impact:} Each node initiates exactly one gossip session per interval.
+Convergence time grows as $\Theta(N \log N)$ (\cref{thm:convergence-time}),
+which becomes impractically slow for large clusters ($N > 50$).
+
+\textbf{Severity:} Low for small clusters; significant for large ones.
+
+\textbf{Planned fix:} Configurable fanout $f > 1$, reducing convergence to
+$\Theta(\log N / \log f)$ rounds.
+
+\subsection{No Transport-Layer Encryption}
+
+\textbf{Impact:} Gossip and client traffic is transmitted as plaintext JSON over
+raw TCP. An on-path adversary can read mutation contents and client credentials
+in transit.
+
+\textbf{Severity:} High in untrusted network environments. The Ed25519
+authentication layer prevents \emph{impersonation} and \emph{mutation
+injection}, but not \emph{eavesdropping}.
+
+\textbf{Planned fix:} TLS for both the gossip and client ports (\cref{sec:future}).

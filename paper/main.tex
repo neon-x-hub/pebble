@@ -1,0 +1,83 @@
+% =============================================================================
+% main.tex — Pebble Whitepaper
+% =============================================================================
+\documentclass[11pt, a4paper]{article}
+
+\input{preamble}
+
+% ---------------------------------------------------------------------------
+% Document metadata
+% ---------------------------------------------------------------------------
+\title{
+  \vspace{-1.5cm}
+  \Large\textbf{\pebble: A Leaderless, Eventually Consistent\\
+  Distributed Key-Value Store}\\[0.5em]
+  \normalsize Technical Whitepaper --- Version 0.1
+}
+
+\author{
+  Abderrahmane Memmou\\
+  \small\texttt{neon-x-hub/pebble}\\
+  \small\url{https://github.com/neon-x-hub/pebble}
+}
+
+\date{August 2026}
+
+% ---------------------------------------------------------------------------
+% Document body
+% ---------------------------------------------------------------------------
+\begin{document}
+
+\maketitle
+\thispagestyle{empty}
+
+\begin{abstract}
+\pebble{} is an eventually consistent, leaderless, distributed key-value store
+implemented in TypeScript on Node.js. It replicates state across cluster nodes
+using a pull-based gossip protocol and resolves concurrent writes deterministically
+using a total-order Last-Write-Wins (LWW) relation. Cluster nodes and external
+clients are authenticated with Ed25519 digital signatures under a lightweight
+certificate-authority model. There is no leader election, no consensus algorithm,
+and no central coordinator: any node accepts reads and writes, and healthy nodes
+converge to identical state.
+
+This whitepaper provides a complete formal description of \pebble{}'s design:
+the mutation data model and algebra, the cryptographic layer, the LWW total-order
+proof, version-vector-based incremental synchronisation, the 4-step gossip protocol,
+node and client authentication handshakes, the TCP wire framing layer, persistence
+and crash recovery, a rigorous complexity analysis as a function of cluster size $N$,
+a catalogue of core system invariants, and a roadmap of known limitations and
+future work.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% ---------------------------------------------------------------------------
+% Sections
+% ---------------------------------------------------------------------------
+\input{sections/01_intro}
+\input{sections/02_architecture}
+\input{sections/03_data_model}
+\input{sections/04_crypto}
+\input{sections/05_conflict}
+\input{sections/06_version_vectors}
+\input{sections/07_gossip}
+\input{sections/08_node_auth}
+\input{sections/09_client_auth}
+\input{sections/10_wire}
+\input{sections/11_persistence}
+\input{sections/12_complexity}
+\input{sections/13_invariants}
+\input{sections/14_limitations}
+\input{sections/15_future_work}
+\input{sections/16_conclusion}
+
+% ---------------------------------------------------------------------------
+% Bibliography
+% ---------------------------------------------------------------------------
+\newpage
+\bibliographystyle{abbrv}
+\bibliography{references}
+
+\end{document}

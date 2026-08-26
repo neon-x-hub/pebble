@@ -1,0 +1,134 @@
+% =============================================================================
+% Section 8 — Node Authentication (3-Way Handshake)
+% =============================================================================
+\section{Node Authentication: 3-Way Handshake}
+\label{sec:nodeauth}
+
+Before any gossip data exchange, two \pebble{} nodes perform a mutual
+challenge-response handshake to authenticate each other and bind the connection
+to the correct cluster. This prevents rogue nodes from injecting mutations into
+a cluster and prevents cross-cluster contamination.
+
+\subsection{Handshake Protocol}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\small]
+
+  % Headers
+  \node at (2, 7.5) {\textbf{Initiator (A)}};
+  \node at (9, 7.5) {\textbf{Responder (B)}};
+  \draw[thick] (2, 7.2) -- (2, 0.5);
+  \draw[thick] (9, 7.2) -- (9, 0.5);
+
+  % Step 1: HELLO
+  \node[font=\footnotesize\itshape, left] at (0.5, 6.5) {Step 1};
+  \draw[msg arrow] (2, 6.5) -- (9, 6.0)
+    node[midway, above, font=\scriptsize]
+    {\msg{HELLO}\{$\mathit{nodeId}_A,\; pk_A,\; \mathit{clusterId},\; n_A$\}};
+
+  % Step 2: HELLO_ACK
+  \node[font=\footnotesize\itshape, left] at (0.5, 5.0) {Step 2};
+  \draw[msg arrow] (9, 5.5) -- (2, 5.0)
+    node[midway, below, font=\scriptsize]
+    {\msg{HELLO\_ACK}\{$\mathit{nodeId}_B,\; pk_B,\; \mathrm{sig}_{sk_B}(n_A),\; n_B$\}};
+
+  % Verify nonce_A_sig annotation
+  \node[font=\scriptsize, align=left] at (5.5, 4.4)
+    {$A$ verifies $\mathrm{sig}_{sk_B}(n_A)$ using $pk_B$ from cluster config};
+
+  % Step 3: HELLO_CONFIRM
+  \node[font=\footnotesize\itshape, left] at (0.5, 3.5) {Step 3};
+  \draw[msg arrow] (2, 3.8) -- (9, 3.3)
+    node[midway, above, font=\scriptsize]
+    {\msg{HELLO\_CONFIRM}\{$\mathrm{sig}_{sk_A}(n_B)$\}};
+
+  % Verify nonce_B_sig annotation
+  \node[font=\scriptsize, align=left] at (5.5, 2.7)
+    {$B$ verifies $\mathrm{sig}_{sk_A}(n_B)$ using $pk_A$ from cluster config};
+
+
+\end{tikzpicture}
+\caption{3-way mutual authentication handshake between peer nodes.
+$n_A, n_B$ are fresh 128-bit nonces; $\mathrm{sig}_{sk}(x)$ denotes an
+Ed25519 signature of $x$ under private key $sk$.}
+\label{fig:handshake}
+\end{figure}
+
+\subsection{Step-by-Step Description}
+
+\paragraph{Step 1 — HELLO.}
+The initiator sends its node identity and a fresh 128-bit random nonce $n_A$:
+\[
+  A \to B:\; \msg{HELLO}\bigl\{\mnid_A,\; pk_A,\; \mathit{clusterId},\;
+             \mathrm{version},\; n_A\bigr\}
+\]
+The cluster ID and protocol version are included so $B$ can reject connections
+from different clusters or incompatible protocol versions immediately.
+
+\paragraph{Step 2 — HELLO\_ACK.}
+The responder validates:
+\begin{enumerate}[leftmargin=1.5em]
+  \item $\mathit{clusterId}$ matches its own configuration.
+  \item $\mathrm{version} = 1$ (current protocol version).
+  \item $\mnid_A$ is present in the cluster configuration and $pk_A$ matches.
+\end{enumerate}
+If any check fails, $B$ sends an \msg{ERROR} and closes the connection.
+Otherwise, $B$ generates its own nonce $n_B$, signs $n_A$ with its private key,
+and replies:
+\[
+  B \to A:\; \msg{HELLO\_ACK}\bigl\{\mnid_B,\; pk_B,\; \mathit{clusterId},\;
+             \mathrm{sig}_{sk_B}(n_A),\; n_B\bigr\}
+\]
+$A$ then verifies that $\mnid_B$ is in its cluster configuration, that $pk_B$
+matches, and that $\mathrm{sig}_{sk_B}(n_A)$ is a valid Ed25519 signature.
+
+\paragraph{Step 3 — HELLO\_CONFIRM.}
+The initiator signs $n_B$ with its own private key and sends:
+\[
+  A \to B:\; \msg{HELLO\_CONFIRM}\bigl\{\mathrm{sig}_{sk_A}(n_B)\bigr\}
+\]
+$B$ verifies the signature. Both sides have now mutually verified each other's
+identity. The connection proceeds to gossip sync.
+
+\subsection{Security Properties}
+
+\begin{theorem}[Mutual authentication]
+\label{thm:mutual-auth}
+After a successful handshake, each node has verified that the peer holds the
+private key corresponding to the public key registered in the cluster
+configuration for that node's ID.
+\end{theorem}
+
+\begin{proof}
+$B$ verifies $\mathrm{sig}_{sk_A}(n_B)$ using $pk_A$ from its \emph{local}
+cluster configuration---not from the HELLO message itself. A successful
+verification proves $A$ possesses $sk_A$ such that
+$\mathrm{Ed25519Verify}(pk_A, n_B, \mathrm{sig}_{sk_A}(n_B)) = \top$.
+Symmetrically, $A$ verifies $B$'s signature using the configuration-bound
+$pk_B$. \qed
+\end{proof}
+
+\begin{theorem}[Replay resistance]
+\label{thm:replay}
+A handshake transcript cannot be replayed by an adversary to establish a new
+authenticated connection.
+\end{theorem}
+
+\begin{proof}
+The nonces $n_A$ and $n_B$ are generated freshly for each connection attempt
+using a cryptographically secure random number generator. The signatures cover
+these nonces, so any replay of a captured transcript will fail verification
+because the nonces in the new challenge will differ. \qed
+\end{proof}
+
+\begin{theorem}[Cluster binding]
+\label{thm:cluster-binding}
+A node from cluster $C_1$ cannot successfully complete a handshake with a node
+configured for cluster $C_2 \neq C_1$.
+\end{theorem}
+
+\begin{proof}
+The cluster ID is checked in Step 2 before any signature is issued. A mismatch
+causes an immediate \msg{ERROR}. \qed
+\end{proof}

@@ -1,0 +1,115 @@
+% =============================================================================
+% Section 6 — Version Vectors
+% =============================================================================
+\section{Version Vectors and Incremental Synchronisation}
+\label{sec:vv}
+
+Version vectors~\cite{fidge1988timestamps,mattern1989vector} are the mechanism
+by which \pebble{} nodes summarise their mutation history and compute precisely
+which mutations a peer is missing, without enumerating the entire history.
+
+\subsection{Definition}
+
+\begin{definition}[Version vector]
+\label{def:vv}
+A \emph{version vector} is a partial function
+\[
+  V : \NodeSet \rightharpoonup \mathbb{Z}^{+}
+\]
+mapping each known node identifier to the \emph{highest sequence number} seen
+from that node. Entries absent from $V$ are treated as $0$:
+$V[n] \triangleq 0$ if $n \notin \mathrm{dom}(V)$.
+\end{definition}
+
+\begin{remark}[High-water mark semantics]
+\pebble{} v0.1 uses a \emph{contiguous high-water mark}: $V[n] = s$ implies
+that this node has received \emph{all} of node $n$'s mutations with sequence
+$1, 2, \ldots, s$. This assumption is valid because:
+\begin{enumerate}[leftmargin=1.5em]
+  \item Mutations from the same originating node are applied in the gossip
+        response in sequence order.
+  \item A single TCP connection is used per gossip session; TCP guarantees
+        in-order delivery within the session.
+\end{enumerate}
+\cref{sec:limitations} discusses the implications of this assumption for
+out-of-order delivery.
+\end{remark}
+
+\subsection{Vector Advancement}
+
+When a mutation $m$ is applied to the store, the local version vector is advanced:
+
+\begin{definition}[Vector advancement]
+\[
+  \mathrm{advance}(V, m) : \quad V[m.\mnid] \;\leftarrow\; \max\bigl(V[m.\mnid],\; m.\mseq\bigr)
+\]
+\end{definition}
+
+The use of $\max$ ensures the vector is \emph{monotonically non-decreasing}: once
+a sequence number is recorded for a node, it is never reduced. This satisfies
+Invariant~\ref{inv:mono-vec} (\cref{sec:invariants}).
+
+\subsection{Missing-Range Computation}
+
+The core of incremental gossip synchronisation is computing which mutations one
+node needs from another.
+
+\begin{definition}[Missing ranges]
+\label{def:missing-ranges}
+Given the local node's vector $V_A$ and the peer's vector $V_B$, the ranges
+that the peer is missing (i.e., mutations the local node has but the peer does not)
+are:
+\[
+  \mathrm{missing}(V_A, V_B) \;=\;
+  \bigl\{\; (n,\; V_B[n]+1,\; V_A[n])
+  \;\mutid\; n \in \mathrm{dom}(V_A) \;\land\; V_A[n] > V_B[n] \;\bigr\}
+\]
+Each element $(n, \mathit{from}, \mathit{to})$ represents the sequence range
+$[\mathit{from}, \mathit{to}]$ for node $n$.
+\end{definition}
+
+\begin{example}
+Suppose $V_A = \{n_1 \mapsto 5,\; n_2 \mapsto 3\}$ and
+$V_B = \{n_1 \mapsto 3,\; n_3 \mapsto 2\}$.
+
+Then:
+\[
+  \mathrm{missing}(V_A, V_B) = \{(n_1, 4, 5),\; (n_2, 1, 3)\}
+\]
+Node $B$ is missing mutations $4$ and $5$ from $n_1$, and all mutations $1$--$3$
+from $n_2$. Note: $n_3$ entries in $V_B$ that are absent from $V_A$ are irrelevant
+to what $A$ can send $B$.
+\end{example}
+
+\begin{remark}[Symmetric computation]
+In a gossip round, both nodes compute missing ranges for the other:
+\begin{itemize}[leftmargin=1.5em]
+  \item $A$ computes $\mathrm{missing}(V_B, V_A)$ --- what $A$ needs from $B$.
+  \item $B$ computes $\mathrm{missing}(V_A, V_B)$ --- what $B$ needs from $A$.
+\end{itemize}
+After exchanging DIGESTs, each node has both vectors and can compute its own
+request set, enabling the symmetric 4-step protocol of \cref{sec:gossip}.
+\end{remark}
+
+\subsection{Monotonicity Invariant}
+
+\begin{invariant}[Monotonic version vectors]
+\label{inv:mono-vv}
+For any node $n$ and any node identifier $n'$, $V_n[n']$ is non-decreasing
+over time. Formally, if event $e_1$ happens-before event $e_2$ at node $n$,
+then $V_n^{e_1}[n'] \leq V_n^{e_2}[n']$.
+\end{invariant}
+
+\begin{proof}
+The advancement operation uses $\max$, which is monotonically non-decreasing.
+Vector entries are only ever written through $\mathrm{advance}$, and no code
+path decreases a vector entry. \qed
+\end{proof}
+
+\subsection{Protocol Limits on Ranges}
+
+To prevent a single gossip message from becoming arbitrarily large, \pebble{}
+caps the number of requested ranges per message at
+\texttt{limits.maxRangesPerRequest} (default: 100) and the number of mutations
+per MUTATIONS message at \texttt{limits.maxMutationsPerMessage} (default: 500).
+A node that is severely behind will catch up over multiple gossip rounds.

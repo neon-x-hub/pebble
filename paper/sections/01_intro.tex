@@ -1,0 +1,106 @@
+% =============================================================================
+% Section 1 — Introduction
+% =============================================================================
+\section{Introduction}
+\label{sec:intro}
+
+Modern distributed applications routinely require storage systems that remain
+available during network partitions, tolerate node failures without service
+interruption, and scale horizontally without bottlenecks imposed by a central
+coordinator. The CAP theorem~\cite{brewer2000cap,gilbert2002cap} establishes
+that no distributed data store can simultaneously guarantee strong consistency,
+availability, and partition tolerance. Systems that choose availability and
+partition tolerance---the AP corner of the CAP triangle---must accept that nodes
+may temporarily diverge and must define a reconciliation strategy for concurrent
+writes.
+
+Consensus-based systems such as Raft~\cite{ongaro2014raft} and
+Paxos~\cite{lamport2001paxos} achieve strong consistency by electing a leader
+that serialises all writes, at the cost of availability when a quorum cannot be
+reached, and of increased operational complexity. Leaderless, eventually consistent
+systems such as Amazon Dynamo~\cite{decandia2007dynamo} and Apache Cassandra
+sacrifice linearisability in favour of write availability on every node and
+partition tolerance, using vector clocks or timestamps to reconcile diverged state.
+
+\pebble{} occupies this leaderless, eventually consistent space. It is a
+distributed key-value store built on a small set of composable primitives:
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Immutable, signed mutations.} Every write or delete is captured
+        as a cryptographically signed, globally unique record that is never
+        modified after creation.
+  \item \textbf{Deterministic Last-Write-Wins (LWW) conflict resolution.} A
+        total order over mutations resolves concurrent writes without coordination,
+        ensuring that all nodes independently compute the same winning value.
+  \item \textbf{Pull-based gossip replication.} Nodes periodically exchange
+        version summaries and transfer only the mutations each peer is missing,
+        providing bandwidth-efficient eventual convergence.
+  \item \textbf{Ed25519 authentication.} Both inter-node connections and external
+        client sessions are authenticated with digital signatures, preventing
+        rogue nodes or forged mutations from corrupting cluster state.
+\end{itemize}
+
+\subsection{Design Goals}
+
+\pebble{} is designed to satisfy the following goals:
+
+\begin{description}[leftmargin=1.5em, labelwidth=3.5cm]
+  \item[Leaderless.] Any node accepts reads and writes. There is no leader
+        election and no single point of failure.
+  \item[Eventually consistent.] All healthy nodes converge to identical state
+        after the last write, given sufficient gossip rounds.
+  \item[Authenticated.] Mutations carry Ed25519 signatures; nodes and clients
+        are verified before any state exchange occurs.
+  \item[Simple.] The core mechanisms (LWW, gossip, version vectors) are well
+        understood and compose cleanly. The entire system is implemented in
+        fewer than 3,000 lines of TypeScript.
+  \item[Durable.] Local mutations are written to an append-only log and synced
+        to disk before acknowledgment. Nodes recover from crash by replaying the
+        log from the last snapshot.
+\end{description}
+
+\subsection{Non-Goals (v0.1)}
+
+The following properties are explicitly \emph{not} provided in the current
+version and are discussed as future work in \cref{sec:future}:
+
+\begin{itemize}[leftmargin=1.5em]
+  \item Linearisability or sequential consistency.
+  \item Multi-key atomic transactions.
+  \item Dynamic cluster membership (node join/leave without restart).
+  \item Transport-layer encryption (TLS).
+  \item Bounded divergence guarantees under arbitrary clock skew.
+\end{itemize}
+
+\subsection{Contributions}
+
+This whitepaper makes the following technical contributions:
+
+\begin{enumerate}[leftmargin=1.5em]
+  \item A formal definition of the mutation algebra and the LWW total order, with
+        a proof of convergence (\cref{sec:conflict}).
+  \item A precise specification of the version-vector-based incremental
+        synchronisation scheme (\cref{sec:vv}).
+  \item A complete description of the 4-step symmetric gossip protocol, with
+        deadlock-freedom and idempotency arguments (\cref{sec:gossip}).
+  \item A complexity analysis of per-round bandwidth, state growth, and
+        cluster-wide convergence time as a function of node count $N$
+        (\cref{sec:complexity}).
+  \item A catalogue of eight formally stated system invariants (\cref{sec:invariants}).
+\end{enumerate}
+
+\subsection{Paper Organisation}
+
+\Cref{sec:arch} describes the overall system architecture.
+\Cref{sec:datamodel} defines the data model.
+\Cref{sec:crypto} covers the cryptographic layer.
+\Cref{sec:conflict} presents the LWW conflict resolution mechanism.
+\Cref{sec:vv} formalises version vectors.
+\Cref{sec:gossip} specifies the gossip protocol.
+\Cref{sec:nodeauth,sec:clientauth} describe node and client authentication.
+\Cref{sec:wire} details TCP framing.
+\Cref{sec:persistence} covers persistence and crash recovery.
+\Cref{sec:complexity} provides complexity analysis.
+\Cref{sec:invariants} enumerates system invariants.
+\Cref{sec:limitations,sec:future} discuss limitations and future work.
+\Cref{sec:conclusion} concludes.

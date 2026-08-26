@@ -1,0 +1,114 @@
+% =============================================================================
+% Section 13 — System Invariants
+% =============================================================================
+\section{System Invariants}
+\label{sec:invariants}
+
+\pebble{} maintains eight core invariants across all subsystems. These
+invariants collectively guarantee correctness, security, and eventual
+consistency.
+
+\begin{invariant}[Global Uniqueness]
+\label{inv:uniqueness}
+The pair $(\mnid, \mseq)$ uniquely identifies at most one mutation across the
+entire cluster:
+\[
+  \forall m, m' \in \MutSet:\quad
+  m.\mnid = m'.\mnid \;\land\; m.\mseq = m'.\mseq
+  \;\implies\; m = m'.
+\]
+\textit{Enforcement:} The Store's \texttt{applyMutation} checks whether $\mathrm{id}(m)$
+is already in the history map $H$. If it is and the content differs, a
+\texttt{SequenceCollisionError} is thrown and the mutation is rejected. Only
+exact duplicates (same content) are silently accepted as idempotent.
+\end{invariant}
+
+\begin{invariant}[Immutability]
+\label{inv:immutability}
+Once a mutation $m$ is stored in $H$, its fields are never modified.
+\[
+  \forall t, t' > 0:\; m \in H^t \;\implies\; H^{t'}[\mathrm{id}(m)] = m.
+\]
+\textit{Enforcement:} All mutation fields are declared \texttt{readonly} in
+TypeScript. The in-memory map stores references to frozen objects; no code path
+modifies a mutation after creation.
+\end{invariant}
+
+\begin{invariant}[Authenticity]
+\label{inv:authenticity}
+Every mutation stored in $H$ that originated from a remote peer carries a valid
+Ed25519 signature from the node identified by $m.\mnid$:
+\[
+  \forall m \in H_{\mathrm{remote}}:\;
+  \mathrm{Ed25519Verify}(pk_{m.\mnid},\;
+  \mathrm{canonicalEncode}(m_{\text{sign}}),\; m.\msig) = \top.
+\]
+\textit{Enforcement:} \texttt{applyMutation} with
+\texttt{skipSignatureVerification~=~false} (the default for all network paths)
+performs verification before committing. An invalid signature raises
+\texttt{InvalidSignatureError}.
+\end{invariant}
+
+\begin{invariant}[Idempotence]
+\label{inv:idempotence}
+Applying the same mutation $m$ to a store multiple times produces the same
+result as applying it once:
+\[
+  \forall m:\; \texttt{apply}(\texttt{apply}(S, m), m) = \texttt{apply}(S, m).
+\]
+\textit{Enforcement:} If $\mathrm{id}(m) \in H$, \texttt{applyMutation}
+returns immediately without touching state. Gossip may deliver the same
+mutation multiple times (e.g., via two independent peers); idempotence ensures
+no harm.
+\end{invariant}
+
+\begin{invariant}[Deterministic Ordering]
+\label{inv:det-order}
+Given the same set of mutations $M$ for a key $k$, every node independently
+computes the same winning mutation:
+\[
+  \forall n_1, n_2:\;
+  H_{n_1} \cap \{m : m.\mkey = k\} = H_{n_2} \cap \{m : m.\mkey = k\}
+  \;\implies\; S_{n_1}(k) = S_{n_2}(k).
+\]
+\textit{Enforcement:} The LWW \texttt{compare} function is a pure function of
+the mutation's fields. It uses no node-local state, no random values, and no
+external communication. By \cref{thm:convergence}, this implies convergence.
+\end{invariant}
+
+\begin{invariant}[Tombstone Replication]
+\label{inv:tombstone}
+If a \texttt{delete} mutation $m_d$ for key $k$ exists in the cluster, it is
+eventually present in every node's history $H$ and wins over any prior
+\texttt{put} mutation:
+\[
+  \exists n:\; m_d \in H_n \;\implies\;
+  \forall n':\; \text{eventually}\; m_d \in H_{n'}.
+\]
+\textit{Enforcement:} Tombstones are stored in $H$ and replicated through gossip
+exactly like put mutations. The LWW order ensures a tombstone with a higher
+timestamp wins over prior puts (absent concurrent puts with a higher timestamp).
+\end{invariant}
+
+\begin{invariant}[Monotonic Version Vectors]
+\label{inv:mono-vec}
+Version vector entries are non-decreasing over time:
+\[
+  \forall n, n':\; V_n^t[n'] \leq V_n^{t+\epsilon}[n'].
+\]
+\textit{Enforcement:} The \texttt{advanceVector} function uses
+$V[n] \leftarrow \max(V[n], m.\mseq)$. No code path decreases a vector entry.
+Proved in Invariant~\ref{inv:mono-vv}.
+\end{invariant}
+
+\begin{invariant}[Monotonic Sequences]
+\label{inv:mono-seq}
+The local sequence counter at a node never repeats or regresses across restarts:
+\[
+  \forall t, t' > 0,\; t < t':\; \mathit{nextSeq}^t_n \leq \mathit{nextSeq}^{t'}_n.
+\]
+\textit{Enforcement:} The crash recovery algorithm (\cref{alg:recovery}) sets
+$\mathit{nextSeq}$ to the maximum of the metadata value, the snapshot value,
+and one more than the highest local sequence seen in the log. A node starting
+with an empty log and metadata initialises $\mathit{nextSeq} = 1$.
+\end{invariant}

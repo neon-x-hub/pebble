@@ -1,0 +1,208 @@
+% =============================================================================
+% references.bib — Pebble Whitepaper Bibliography
+% =============================================================================
+
+% --- Foundational distributed systems ---
+
+@article{lamport1978time,
+  author    = {Lamport, Leslie},
+  title     = {Time, Clocks, and the Ordering of Events in a Distributed System},
+  journal   = {Communications of the ACM},
+  volume    = {21},
+  number    = {7},
+  pages     = {558--565},
+  year      = {1978},
+  publisher = {ACM},
+  doi       = {10.1145/359545.359563},
+}
+
+@inproceedings{brewer2000cap,
+  author    = {Brewer, Eric A.},
+  title     = {Towards Robust Distributed Systems},
+  booktitle = {Proceedings of the 19th Annual ACM Symposium on Principles of Distributed Computing (PODC)},
+  year      = {2000},
+  note      = {Invited keynote},
+}
+
+@article{gilbert2002cap,
+  author    = {Gilbert, Seth and Lynch, Nancy A.},
+  title     = {Brewer's Conjecture and the Feasibility of Consistent, Available, Partition-Tolerant Web Services},
+  journal   = {ACM SIGACT News},
+  volume    = {33},
+  number    = {2},
+  pages     = {51--59},
+  year      = {2002},
+  doi       = {10.1145/564585.564601},
+}
+
+% --- CRDTs and eventual consistency ---
+
+@inproceedings{shapiro2011crdt,
+  author    = {Shapiro, Marc and Pregui{\c c}a, Nuno and Baquero, Carlos and Zawirski, Marek},
+  title     = {Conflict-Free Replicated Data Types},
+  booktitle = {Proceedings of the 13th International Symposium on Stabilization, Safety, and Security of Distributed Systems (SSS)},
+  pages     = {386--400},
+  year      = {2011},
+  publisher = {Springer},
+  doi       = {10.1007/978-3-642-24550-3_29},
+}
+
+@article{vogels2009eventually,
+  author    = {Vogels, Werner},
+  title     = {Eventually Consistent},
+  journal   = {Communications of the ACM},
+  volume    = {52},
+  number    = {1},
+  pages     = {40--44},
+  year      = {2009},
+  doi       = {10.1145/1435417.1435432},
+}
+
+% --- Gossip protocols ---
+
+@inproceedings{demers1987epidemic,
+  author    = {Demers, Alan and Greene, Dan and Hauser, Carl and Irish, Wes and Larson, John and Shenker, Scott and Sturgis, Howard and Swinehart, Dan and Terry, Doug},
+  title     = {Epidemic Algorithms for Replicated Database Maintenance},
+  booktitle = {Proceedings of the 6th Annual ACM Symposium on Principles of Distributed Computing (PODC)},
+  pages     = {1--12},
+  year      = {1987},
+  doi       = {10.1145/41840.41841},
+}
+
+@article{kermarrec2007gossip,
+  author    = {Kermarrec, Anne-Marie and van Steen, Maarten},
+  title     = {Gossiping in Distributed Systems},
+  journal   = {ACM SIGOPS Operating Systems Review},
+  volume    = {41},
+  number    = {5},
+  pages     = {2--7},
+  year      = {2007},
+  doi       = {10.1145/1317379.1317381},
+}
+
+% --- Last-Write-Wins and version vectors ---
+
+@article{parker1983detection,
+  author    = {Parker, D. S. and Popek, G. J. and Rudisin, G. and Stoughton, A. and Walker, B. J. and Walton, E. and Chow, J. M. and Edwards, D. and Kiser, S. and Kline, C.},
+  title     = {Detection of Mutual Inconsistency in Distributed Systems},
+  journal   = {IEEE Transactions on Software Engineering},
+  volume    = {9},
+  number    = {3},
+  pages     = {240--247},
+  year      = {1983},
+  doi       = {10.1109/TSE.1983.236733},
+}
+
+@inproceedings{matos2011lightweight,
+  author    = {Matos, Miguel and Sousa, Ant{\'o}nio and Pereira, Jos{\'e} and Oliveira, Rui},
+  title     = {LSCAST: Lightweight Scalable Consistent Anti-Entropy},
+  booktitle = {Proceedings of the ACM/IFIP/USENIX Middleware Conference},
+  year      = {2011},
+}
+
+% --- Dynamo and distributed KV stores ---
+
+@inproceedings{decandia2007dynamo,
+  author    = {DeCandia, Giuseppe and Hastorun, Deniz and Jampani, Madan and Kakulapati, Gunavardhan and Lakshman, Avinash and Pilchin, Alex and Sivasubramanian, Swaminathan and Vosshall, Peter and Vogels, Werner},
+  title     = {Dynamo: Amazon's Highly Available Key-Value Store},
+  booktitle = {Proceedings of the 21st ACM Symposium on Operating Systems Principles (SOSP)},
+  pages     = {205--220},
+  year      = {2007},
+  doi       = {10.1145/1294261.1294281},
+}
+
+@inproceedings{riak2010,
+  author    = {Klophaus, Rusty},
+  title     = {Riak Core: Building Distributed Applications Without Shared State},
+  booktitle = {ACM SIGPLAN Commercial Users of Functional Programming (CUFP)},
+  year      = {2010},
+  doi       = {10.1145/1863523.1863529},
+}
+
+% --- Consensus (contrasted with leaderless design) ---
+
+@inproceedings{ongaro2014raft,
+  author    = {Ongaro, Diego and Ousterhout, John},
+  title     = {In Search of an Understandable Consensus Algorithm},
+  booktitle = {Proceedings of the 2014 USENIX Annual Technical Conference (USENIX ATC)},
+  pages     = {305--319},
+  year      = {2014},
+}
+
+@article{lamport2001paxos,
+  author    = {Lamport, Leslie},
+  title     = {Paxos Made Simple},
+  journal   = {ACM SIGACT News},
+  volume    = {32},
+  number    = {4},
+  pages     = {18--25},
+  year      = {2001},
+}
+
+% --- Hybrid Logical Clocks ---
+
+@inproceedings{kulkarni2014hlc,
+  author    = {Kulkarni, Sandeep and Demirbas, Murat and Madappa, Deepak and Avva, Bharadwaj and Leone, Marcelo},
+  title     = {Logical Physical Clocks and Consistent Snapshots in Globally Distributed Databases},
+  booktitle = {Proceedings of the 18th International Conference on Principles of Distributed Systems (OPODIS)},
+  year      = {2014},
+  doi       = {10.1007/978-3-319-14472-6_2},
+}
+
+% --- Cryptography ---
+
+@article{bernstein2012ed25519,
+  author    = {Bernstein, Daniel J. and Duif, Niels and Lange, Tanja and Schwabe, Peter and Yang, Bo-Yin},
+  title     = {High-Speed High-Security Signatures},
+  journal   = {Journal of Cryptographic Engineering},
+  volume    = {2},
+  number    = {2},
+  pages     = {77--89},
+  year      = {2012},
+  doi       = {10.1007/s13389-012-0027-1},
+}
+
+@misc{rfc8032,
+  author    = {Josefsson, Simon and Liusvaara, Ilari},
+  title     = {{Edwards-Curve Digital Signature Algorithm (EdDSA)}},
+  howpublished = {RFC 8032, Internet Engineering Task Force},
+  year      = {2017},
+  url       = {https://www.rfc-editor.org/rfc/rfc8032},
+}
+
+@misc{rfc8785,
+  author    = {Rundgren, Anders and Jordan, Bret and Erdtman, Samuel},
+  title     = {{JSON Canonicalization Scheme (JCS)}},
+  howpublished = {RFC 8785, Internet Engineering Task Force},
+  year      = {2020},
+  url       = {https://www.rfc-editor.org/rfc/rfc8785},
+}
+
+% --- Vector clocks ---
+
+@article{fidge1988timestamps,
+  author    = {Fidge, Colin J.},
+  title     = {Timestamps in Message-Passing Systems That Preserve the Partial Ordering},
+  journal   = {Australian Computer Science Communications},
+  volume    = {10},
+  number    = {1},
+  pages     = {56--66},
+  year      = {1988},
+}
+
+@article{mattern1989vector,
+  author    = {Mattern, Friedemann},
+  title     = {Virtual Time and Global States of Distributed Systems},
+  journal   = {Parallel and Distributed Algorithms},
+  pages     = {215--226},
+  year      = {1989},
+}
+
+% --- TypeScript / Node.js runtime context ---
+
+@misc{nodejs2024,
+  author    = {{OpenJS Foundation}},
+  title     = {{Node.js Documentation}},
+  year      = {2024},
+  url       = {https://nodejs.org/en/docs/},
+}

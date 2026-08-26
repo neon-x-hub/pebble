@@ -1,0 +1,184 @@
+% =============================================================================
+% Section 12 — Complexity Analysis
+% =============================================================================
+\section{Complexity Analysis}
+\label{sec:complexity}
+
+This section analyses the computational and communication complexity of
+\pebble{} as a function of the cluster size $N$ (number of nodes), the total
+number of distinct keys $K$, and the total number of mutations $M$ in the
+cluster history.
+
+\subsection{Per-Node State Complexity}
+
+\begin{table}[H]
+\centering
+\caption{In-memory state sizes per node.}
+\label{tab:state-complexity}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Structure} & \textbf{Size} & \textbf{Notes} \\
+\midrule
+Current state map ($S$)    & $\Oof{K}$   & One winning mutation per key,
+                                            including tombstones \\
+Mutation history ($H$)     & $\Oof{M}$   & All mutations ever received;
+                                            no GC in v0.1 \\
+Version vector ($V$)       & $\Oof{N}$   & One entry per known node \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The total in-memory footprint per node is $\Oof{K + M + N}$. In practice
+$M \gg K$ after steady-state operation (many mutations per key), so the
+dominant term is $\Oof{M}$.
+
+\begin{remark}[History growth]
+Because \pebble{} v0.1 retains the full mutation history without compaction,
+memory usage grows without bound as long as mutations are generated. This is
+the primary scalability concern in the current version; see
+\cref{sec:limitations} and \cref{sec:future} for the planned GC mechanism.
+\end{remark}
+
+\subsection{Version Vector and Missing-Range Computation}
+
+\begin{proposition}
+Computing $\mathrm{missing}(V_A, V_B)$ requires $\Oof{N}$ time and produces
+at most $N$ range entries.
+\end{proposition}
+
+\begin{proof}
+The computation iterates over $\mathrm{dom}(V_A)$, which has at most $N$
+entries (one per node). For each entry, a constant-time comparison and
+conditional append are performed. The result has at most $N$ elements
+(one per originating node). \qed
+\end{proof}
+
+\subsection{Gossip Round Complexity}
+
+\begin{table}[H]
+\centering
+\caption{Per-gossip-round message complexity.}
+\label{tab:round-complexity}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Phase} & \textbf{Messages} & \textbf{Max Payload} \\
+\midrule
+DIGEST exchange      & 2 messages & $\Oof{N}$ bytes each \\
+REQUEST (initiator)  & 1 message  & $\Oof{N}$ ranges \\
+MUTATIONS (from B)   & 1 message  & $\Oof{M_{\max}}$ mutations \\
+REQUEST (responder)  & 1 message  & $\Oof{N}$ ranges \\
+MUTATIONS (from A)   & 1 message  & $\Oof{M_{\max}}$ mutations \\
+ACK $\times 2$       & 2 messages & $\Oof{1}$ each \\
+\midrule
+\textbf{Total}       & \textbf{8 messages} &
+  $\Oof{N + M_{\max}}$ bytes \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+where $M_{\max} = \texttt{limits.maxMutationsPerMessage}$ (default: 500).
+
+\paragraph{Worst-case bandwidth.}
+If a node is starting fresh with no history and connects to a node with $M$
+total mutations, it will require $\lceil M / M_{\max} \rceil$ gossip rounds to
+catch up, each transferring $\Oof{M_{\max}}$ mutations. Total catch-up bandwidth:
+$\Oof{M}$.
+
+\paragraph{Incremental (steady-state) bandwidth.}
+During steady-state operation with $\Delta M$ new mutations since the last sync
+with a given peer, a single gossip round transfers $\Oof{\Delta M}$ mutations.
+This is the common case.
+
+\subsection{Cluster-Wide Convergence Time}
+
+\pebble{} uses random gossip fanout of 1 per node per interval. This is
+equivalent to the \emph{push-pull} gossip model studied by Demers et
+al.~\cite{demers1987epidemic}.
+
+\begin{theorem}[Expected convergence time]
+\label{thm:convergence-time}
+Starting from a single node holding a mutation, the expected number of gossip
+rounds for the mutation to reach all $N$ nodes is $\Theta(N \log N)$, assuming
+each node selects a uniformly random healthy peer in each round.
+\end{theorem}
+
+\begin{proof}[Sketch]
+This follows from the standard coupon-collector analysis of epidemic
+broadcasting. In round $r$, let $k$ be the number of informed nodes. Each of
+the $N - k$ uninformed nodes is contacted by an informed node with probability
+$k/N$ per round. By linearity of expectation and the harmonic series, the
+expected total rounds until all nodes are informed is:
+\[
+  \mathbb{E}[\text{rounds}] = N \sum_{k=1}^{N} \frac{1}{k} = \Theta(N \log N).
+\]
+\qed
+\end{proof}
+
+\begin{table}[H]
+\centering
+\caption{Expected convergence rounds for representative cluster sizes
+with \texttt{gossipIntervalMs} = 1{,}000\,ms.}
+\label{tab:convergence-table}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+$N$ & $\mathbb{E}[\text{rounds}]$ & \textbf{Approx.\ wall time} & \textbf{Note} \\
+\midrule
+3   & $\approx 5.5$ & $\approx 5.5\,\text{s}$  & Small dev cluster \\
+5   & $\approx 11$  & $\approx 11\,\text{s}$   & Small production \\
+10  & $\approx 29$  & $\approx 29\,\text{s}$   & Medium cluster \\
+20  & $\approx 72$  & $\approx 72\,\text{s}$   & Large cluster \\
+50  & $\approx 225$ & $\approx 225\,\text{s}$  & Use higher fanout \\
+100 & $\approx 519$ & $\approx 519\,\text{s}$  & Use higher fanout \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{remark}[Fanout scaling]
+For clusters larger than $\sim$20 nodes, a gossip fanout greater than 1
+(selecting $f > 1$ peers per round) reduces convergence time to
+$\Theta(\log N / \log f)$ rounds. This is a planned improvement
+(\cref{sec:future}).
+\end{remark}
+
+\subsection{Gossip Session Load per Node}
+
+Each node initiates exactly one outbound gossip session per
+\texttt{gossipIntervalMs} interval and can receive an unbounded number of
+inbound sessions (one per active peer). In a cluster of $N$ nodes:
+
+\begin{itemize}[leftmargin=1.5em]
+  \item \textbf{Outbound load}: $\Oof{1}$ session per node per interval (constant).
+  \item \textbf{Inbound load}: $\Oof{N}$ sessions per interval, since every
+        other node may choose this node as its target.
+\end{itemize}
+
+Each inbound session occupies a dedicated TCP connection for the duration of
+the 4-step protocol. Because gossip sessions are short-lived and sequential per
+initiator, the server must handle up to $N-1$ concurrent inbound connections.
+The Node.js event loop can sustain hundreds of concurrent lightweight connections
+without saturation.
+
+\subsection{Handshake Complexity}
+
+The 3-way handshake (\cref{sec:nodeauth}) requires 3 round trips and 4
+Ed25519 operations (2 signs, 2 verifies) per connection. All operations are
+$\Oof{1}$ in node count and dominate only the connection-establishment phase.
+
+\subsection{Snapshot and Recovery Complexity}
+
+\begin{table}[H]
+\centering
+\caption{Persistence operation complexity.}
+\label{tab:persistence-complexity}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Operation} & \textbf{Complexity} \\
+\midrule
+Snapshot write     & $\Oof{K}$ — serialise current state (one entry per key) \\
+Snapshot read      & $\Oof{K}$ — deserialise and validate \\
+Log append         & $\Oof{1}$ amortised — single NDJSON line + fsync \\
+Log replay         & $\Oof{M}$ — replay all entries (bounded by $M$) \\
+Recovery (total)   & $\Oof{K + M}$ — snapshot load + log replay \\
+\bottomrule
+\end{tabular}
+\end{table}
